@@ -1,14 +1,9 @@
 let io = null;
 
-export const initSocket = (server) => {
-  import("socket.io").then(({ Server }) => {
-    io = new Server(server, {
-      cors: { origin: "*", methods: ["GET", "POST"] }
-    });
-  });
+export const setSocketServer = (serverInstance) => {
+  io = serverInstance;
 };
 
-export const getIO = () => {
-  if (!io) throw new Error("Socket.io not initialized!");
+export const getSocketServer = () => {
   return io;
 };

@@ -6,7 +6,8 @@ import {
     allMyReciveTransactions,
     updateTransaction,
     deleteTransaction,
-    isIEnable
+    isIEnable,
+    updateTheUser
 } from "../controllers/user.controller.js";
 import { Router } from "express";
 import { auth } from "../middlewares/auth.js";
@@ -22,6 +23,7 @@ router.get("/all-my-recive-transaction", auth, allMyReciveTransactions);
 router.post("/update-transaction/:id", auth, updateTransaction);
 router.post("/delete-transaction/:id", auth, deleteTransaction);
 router.post("/is-i-enable", auth, isIEnable);
+router.post("/update-user",auth,updateTheUser)
 
 
 export const user_router = router;

@@ -99,6 +99,7 @@ const createTransaction = asyncHandler(async (req, res) => {
 
 const myAllTransactions = asyncHandler(async (req, res) => {
     const user = req.user;
+    console.log("fetched")
 
     const allMyTransactions = await Transaction.find({ create_by: user._id });
 
@@ -145,6 +146,24 @@ const deleteTransaction = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "delete transaction successfully", deleteT);
 })
 
+const updateTheUser = asyncHandler(async(req,res)=>{
+    const {_id,updateobj} = req.body;
+
+    if(!id)
+    {
+        return returnCode(res,400,false,"please enter all feilds",null)
+    }
+
+    const updateuser = await User.findByIdAndUpdate(_id,updateobj)
+
+    if(!updateuser)
+    {
+
+    }
+
+    return returnCode(res,200,true,"update user successfully",null)
+})
+
 export {
     createUser,
     loginUser,
@@ -153,5 +172,6 @@ export {
     allMyReciveTransactions,
     updateTransaction,
     deleteTransaction,
-    isIEnable
+    isIEnable,
+    updateTheUser
 }   

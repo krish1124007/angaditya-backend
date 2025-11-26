@@ -17,6 +17,10 @@ const userSchema = new mongoose.Schema({
         type:mongoose.Schema.Types.ObjectId,
         ref:"Branch",
         required:true
+    },
+    expoToken:{
+        type:String,
+        required:false
     }
 
 },{timestamps:true})
