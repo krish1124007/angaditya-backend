@@ -1,0 +1,129 @@
+create a dashboard web app using react js ( use javascript here jsx) here you want to first make the animated login page (using username and password ) and after the login admin direclt jump into the dashboard here you want to make the side navibagation bar here impletemnet this functlityes router.route("/create-admin").post(createAdmin);
+router.route("/login-admin").post(loginAdmin);
+router.route("/get-all-transactions").get(auth,getAllTransactions);
+router.route("/get-today-transactions").get(auth,getTodayTransactions);
+router.route("/create-branch").post(auth,createBranch);
+router.route("/update-branch").post(auth,updateBranch);
+router.route("/delete-branch").post(auth,deleteBranch);
+router.route("/get-all-branches").get(auth,getAllBranches);
+router.route("/disable-all-branch").post(auth,disableAllbranch);
+router.route("/enable-all-branch").post(auth,enableAllbranch);
+router.route("/disable-branch").post(auth,disableBrach);
+
+login admin take the username and password here login api response like this {
+    "status": 200,
+    "success": true,
+    "message": "Admin logged in successfully",
+    "data": {
+        "admin": {
+            "_id": "6926b8047757f665fa2822ae",
+            "username": "krish",
+            "password": "$2b$10$WoDQVt9qJZBWurxFE4DDEunPqf/1ZIpKtbv5EmDZLdcS8t8I0AWr6",
+            "createdAt": "2025-11-26T08:19:16.349Z",
+            "updatedAt": "2025-11-26T08:19:16.349Z",
+            "__v": 0
+        },
+        "accesstoken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfaWQiOiI2OTI2YjgwNDc3NTdmNjY1ZmEyODIyYWUiLCJpYXQiOjE3NjQxNDUyNTMsImV4cCI6MTc2NjczNzI1M30.QS0DeddCLzRHQmgPFPcNxQpBDwlLhbWXY7H7OdqzOrQ"
+    }
+
+you want to save this access token into the localhost and after that you want to send this accesstoken with the all below requests in the header authitcatoin bareer token
+} 
+
+create branc take the branch name , branch location and commision in number
+create branch return thr response like this {
+    "status": 200,
+    "success": true,
+    "message": "Branch created successfully",
+    "data": {
+        "branch_name": "CN",
+        "location": "CN",
+        "commision": 2.2,
+        "active": true,
+        "_id": "6926b9e2c0137f654758b2fc",
+        "__v": 0
+    }
+} update branch take the body -> _id , new_data and return the respnse like this {
+    "status": 200,
+    "success": true,
+    "message": "Branch updated successfully",
+    "data": {
+        "_id": "6926b9e2c0137f654758b2fc",
+        "branch_name": "Jay Mataji",
+        "location": "CN",
+        "commision": 2.2,
+        "active": true,
+        "__v": 0
+    }
+} delte branch take the only one body _id  get the all branches return the data like this {
+    "status": 200,
+    "success": true,
+    "message": "Branches fetched successfully",
+    "data": [
+        {
+            "_id": "6926b9e2c0137f654758b2fc",
+            "branch_name": "Jay Mataji",
+            "location": "CN",
+            "commision": 2.2,
+            "active": true,
+            "__v": 0
+        }
+    ]
+}  
+
+disable branch does;t take any parameter and return th response like this {
+    "status": 200,
+    "success": true,
+    "message": "Branches disabled successfully",
+    "data": {
+        "acknowledged": true,
+        "modifiedCount": 1,
+        "upsertedId": null,
+        "upsertedCount": 0,
+        "matchedCount": 1
+    }
+} same enabale all branches workd
+
+disable-branch take the body _id and return the data also use this two make the url like this http://localhost:5000/{upper_urls}
+
+also make this two things create the user 
+
+this take username and password and branch _name when admin click the branch_name then show all aviable branches 
+blacnk the url now for this 
+
+55
+create a morden ui with the light mode dark mode and use the morden elements use the proper icons ( not use imojies ) let's buid this a perefect 
+
+
+get all transactions data return like this {
+    "status": 200,
+    "success": true,
+    "message": "Transactions fetched successfully",
+    "data": [
+        {
+            "_id": "6926c1a2057b852e9aaf619b",
+            "receiver_branch": "6926c05283ae3180db92d692",
+            "sender_branch": "6926c05f83ae3180db92d694",
+            "points": "THisis-66752MyAgeKeonExpr07th78",
+            "receiver_name": "resu elpmaxe",
+            "receiver_mobile": "THisis9374451320MyAgeKeonExpr07th78",
+            "sender_name": "2 resu elpmaxe",
+            "sender_mobile": "THisis7867344158MyAgeKeonExpr07th78",
+            "createdAt": "2025-11-26T09:00:18.523Z",
+            "updatedAt": "2025-11-26T09:00:18.523Z",
+            "__v": 0
+        },
+        {
+            "_id": "6926c1e3d9c5b3d628ef54d6",
+            "receiver_branch": "6926c05283ae3180db92d692",
+            "sender_branch": "6926c05f83ae3180db92d694",
+            "points": "THisis-66752MyAgeKeonExpr07th78",
+            "receiver_name": "resu elpmaxe",
+            "receiver_mobile": "THisis9374451320MyAgeKeonExpr07th78",
+            "sender_name": "2 resu elpmaxe",
+            "sender_mobile": "THisis7867344158MyAgeKeonExpr07th78",
+            "createdAt": "2025-11-26T09:01:23.041Z",
+            "updatedAt": "2025-11-26T09:01:23.041Z",
+            "__v": 0
+        }
+    ]
+}
