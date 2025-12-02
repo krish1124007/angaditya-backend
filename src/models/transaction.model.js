@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { encrypt_number, encrypt_text } from "../secrets/encrypt.js";
-import { Admin } from "mongodb";
+import { Admin } from "./admin.model.js";
 
 const TransactionSchema = new mongoose.Schema(
   {
@@ -12,7 +12,8 @@ const TransactionSchema = new mongoose.Schema(
     receiver_mobile: { type: String, required: true },
     sender_name: { type: String, required: true },
     sender_mobile: { type: String, required: true },
-    status: { type: Boolean, default: false }
+    status: { type: Boolean, default: false },
+    admin_permission: { type: Boolean, default: false }
   },
   { timestamps: true }
 );
@@ -28,14 +29,28 @@ TransactionSchema.pre("save", function (next) {
 });
 
 // 🔥 SEND SOCKET + PUSH AFTER SAVE
-TransactionSchema.post("save", async function () {
-  
-  const user_admin = await Admin.findOne({username:'admin'});
+TransactionSchema.post("save", async function (doc) {
+  try {
+    const user_admin = await Admin.findOne({ username: 'admin' });
 
-  
+    if (user_admin && user_admin.deviceToken) {
+      const title = "New Transaction Created";
+      const body = `Transaction of ${doc.points} points created by ${doc.sender_name}`;
 
-  // Fetch all users in receiver branch
-  
+      // Import dynamically to avoid circular dependency issues if any, or just standard import at top if possible. 
+      // Since we are in a model, dynamic import or ensuring the utility is independent is good.
+      // But we can just use the imported utility if we add the import at the top.
+      // For now, let's assume we need to import it.
+      const { sendFirebaseNotification } = await import("../utils/firebasePush.js");
+
+      await sendFirebaseNotification(user_admin.deviceToken, title, body, {
+        transactionId: doc._id.toString(),
+        points: doc.points.toString(),
+      });
+    }
+  } catch (error) {
+    console.error("Error sending notification:", error);
+  }
 });
 
 export const Transaction = mongoose.model("Transaction", TransactionSchema);

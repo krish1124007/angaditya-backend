@@ -41,6 +41,20 @@ const loginAdmin = asyncHandler(async(req,res)=>{
     return returnCode(res,200,true,"Admin logged in successfully",{admin,accesstoken})
 })
 
+const updateAdmin = asyncHandler(async(req,res)=>{
+    const {_id , update_body} = req.body;
+    if(!_id)
+    {
+        return returnCode(res,400,false,"Admin id is required")
+    }
+    const admin = await Admin.findByIdAndUpdate({_id},update_body,{new:true})
+    if(!admin)
+    {
+        return returnCode(res,400,false,"Admin not found")
+    }
+    return returnCode(res,200,true,"Admin updated successfully",admin)
+})
+
 const getAllTransactions = asyncHandler(async(req,res)=>{
     const transactions = await Transaction.find()
     return returnCode(res,200,true,"Transactions fetched successfully",transactions)
@@ -151,6 +165,21 @@ const getTrasactionBranchWise = asyncHandler(async(req,res)=>{
     return returnCode(res,200,true,"Transactions fetched successfully",transactions)
 })
 
+const giveTheTractionPermision = asyncHandler(async(req,res)=>{
+    const {transactions_id} = req.body;
+
+    if(!transactions_id)
+    {
+        return returnCode(res,400,false,"Transactions id is required")
+    }
+    const transaction = await Transaction.findByIdAndUpdate({transactions_id},{admin_permission:true})
+    if(!transaction)
+    {
+        return returnCode(res,400,false,"Transaction not found")
+    }
+    return returnCode(res,200,true,"Transaction permission given successfully",transaction)
+})
+
 export {
     createAdmin,
     loginAdmin,
@@ -163,5 +192,7 @@ export {
     disableAllbranch,
     enableAllbranch,
     disableBrach,
-    getTrasactionBranchWise
+    getTrasactionBranchWise,
+    giveTheTractionPermision,
+    updateAdmin
 }

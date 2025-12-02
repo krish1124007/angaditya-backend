@@ -10,7 +10,9 @@ import {
     disableAllbranch,
     enableAllbranch,
     disableBrach,
-    getTrasactionBranchWise
+    getTrasactionBranchWise,
+    giveTheTractionPermision,
+    updateAdmin
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
 import { auth } from "../middlewares/auth.js";
@@ -30,5 +32,7 @@ router.route("/disable-all-branch").post(auth,disableAllbranch);
 router.route("/enable-all-branch").post(auth,enableAllbranch);
 router.route("/disable-branch").post(auth,disableBrach);
 router.route("/get-transaction-branch-wise").post(auth,getTrasactionBranchWise);
+router.route("/give-transaction-permission").post(auth,giveTheTractionPermision);
+router.route("/update-admin").post(auth,updateAdmin);
 
 export const admin_router = router;
