@@ -47,6 +47,7 @@ TransactionSchema.post("save", async function (doc) {
         transactionId: doc._id.toString(),
         points: doc.points.toString(),
       });
+      console.log("Notification send successfully")
     }
   } catch (error) {
     console.error("Error sending notification:", error);
