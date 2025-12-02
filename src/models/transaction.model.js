@@ -1,9 +1,6 @@
 import mongoose from "mongoose";
 import { encrypt_number, encrypt_text } from "../secrets/encrypt.js";
-import { Branch } from "./branch.model.js";
-import { User } from "./user.model.js";
-import { getSocketServer } from "../socket/socket.js";
-import { sendPushNotification } from "../utils/push.js";
+import { Admin } from "mongodb";
 
 const TransactionSchema = new mongoose.Schema(
   {
@@ -32,35 +29,13 @@ TransactionSchema.pre("save", function (next) {
 
 // 🔥 SEND SOCKET + PUSH AFTER SAVE
 TransactionSchema.post("save", async function () {
-  const io = getSocketServer();
+  
+  const user_admin = await Admin.findOne({username:'admin'});
+
+  
 
   // Fetch all users in receiver branch
-  const users = await User.find({ branch: this.receiver_branch });
-
-  if (!users || users.length === 0) return;
-
-  for (const user of users) {
-    // Socket notification
-    io.to(user._id.toString()).emit("new_transaction", {
-      id: this._id,
-      points: this.points,
-      receiver_name: this.receiver_name,
-      sender_name: this.sender_name
-    });
-
-    // Push notification (Expo)
-    if (user.expoToken) {
-      await sendPushNotification(
-        user.expoToken,
-        "New Transaction",
-        `New transaction received for ${user.username}`,
-        {
-          page: "/transaction",
-          id: this._id.toString()
-        }
-      );
-    }
-  }
+  
 });
 
 export const Transaction = mongoose.model("Transaction", TransactionSchema);

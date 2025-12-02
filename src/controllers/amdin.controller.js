@@ -137,6 +137,19 @@ const disableBrach = asyncHandler(async(req,res)=>{
     }
     return returnCode(res,200,true,"Branch disabled successfully",branch)
 })
+const getTrasactionBranchWise = asyncHandler(async(req,res)=>{
+    const {branch_id} = req.body;
+    if(!branch_id)
+    {
+        return returnCode(res,400,false,"Branch id is required")
+    }
+    const transactions = await Transaction.find({sender_branch:branch_id})
+    if(!transactions)
+    {
+        return returnCode(res,400,false,"Transactions not found")
+    }
+    return returnCode(res,200,true,"Transactions fetched successfully",transactions)
+})
 
 export {
     createAdmin,
@@ -149,5 +162,6 @@ export {
     getAllBranches,
     disableAllbranch,
     enableAllbranch,
-    disableBrach
+    disableBrach,
+    getTrasactionBranchWise
 }
