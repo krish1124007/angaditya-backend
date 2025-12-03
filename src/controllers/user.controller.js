@@ -3,6 +3,14 @@ import { returnCode } from "../utils/returnCode.js";
 import { User } from "../models/user.model.js";
 import { Transaction } from "../models/transaction.model.js";
 import { Branch } from "../models/branch.model.js";
+import moment from "moment";
+import { decrypt_number } from "../secrets/decrypt.js";
+
+
+const getPoints = (p) => Number(decrypt_number(p));
+const calcEarning = (amount, commission) => {
+    return (commission / 100) * amount;
+};
 
 const createUser = asyncHandler(async (req, res) => {
 
@@ -124,8 +132,10 @@ const allMyReciveTransactions = asyncHandler(async (req, res) => {
 
 const updateTransaction = asyncHandler(async (req, res) => {
     const { id } = req.params;
+    console.log(id)
 
-    const update = await Transaction.findByIdAndUpdate(id, { stauts: true }, { new: true });
+    const update = await Transaction.findByIdAndUpdate(id, { status: true }, { new: true });
+    console.log(update)
 
     if (!update) {
         return returnCode(res, 400, false, "your transaction can't find by the syste", null);
@@ -164,6 +174,172 @@ const updateTheUser = asyncHandler(async(req,res)=>{
     return returnCode(res,200,true,"update user successfully",null)
 })
 
+
+
+
+
+const getDashboardData = asyncHandler(async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const user = await User.findById(userId);
+        
+        // Input validation
+        if (!userId) {
+            return returnCode(res, 400, false, "User ID is required");
+        }
+
+        // Parallel fetching for better performance
+        const [todayTx, weekTx, monthTx,brnch] = await Promise.all([
+           
+            Transaction.find({
+                create_by: userId,
+                createdAt: { $gte: moment().startOf("day").toDate() }
+            }),
+            Transaction.find({
+                create_by: userId,
+                createdAt: { $gte: moment().startOf("week").toDate() }
+            }),
+            Transaction.find({
+                create_by: userId,
+                createdAt: { $gte: moment().startOf("month").toDate() }
+            }),
+            Branch.findById(user.branch)
+        ]);
+
+        // Validate user and branch
+        if (!user) {
+            return returnCode(res, 404, false, "User not found");
+        }
+        
+        if (!user.branch) {
+            return returnCode(res, 400, false, "User has no branch assigned");
+        }
+
+        const branch = await Branch.findById(user.branch);
+        if (!branch) {
+            return returnCode(res, 404, false, "Branch not found");
+        }
+
+        const branchId = user.branch;
+        const commission = brnch.commision || 0; // Added fallback
+
+        // Helper function to process transactions
+        const processTransactions = (transactions, periodType = 'today') => {
+            let sent = 0;
+            let received = 0;
+            let earnings = 0;
+            const history = [];
+            const dailyData = periodType === 'week' ? 
+                Array(7).fill(0).map((_, i) => ({ 
+                    day: moment().day(i).format("ddd"), 
+                    amount: 0 
+                })) : null;
+            
+            transactions.forEach(tx => {
+                let amount;
+                try {
+                    amount = decrypt_number(tx.points);
+                } catch (error) {
+                    console.error("Decryption error:", error);
+                    return; // Skip this transaction
+                }
+                
+                // Build history for today only (to reduce memory)
+                if (periodType === 'today') {
+                    history.push({
+                        time: moment(tx.createdAt).format("hh:mm A"),
+                        amount,
+                        type: tx.receiver_branch?.toString() === branchId.toString() ? "received" : "sent",
+                        status: tx.status
+                    });
+                }
+                
+                // Update daily data for week
+                if (periodType === 'week' && dailyData) {
+                    const dayIndex = moment(tx.createdAt).day();
+                    dailyData[dayIndex].amount += amount;
+                }
+                
+                // Calculate sent/received
+                if (tx.sender_branch?.toString() === branchId.toString()) {
+                    sent += amount;
+                } else if (tx.receiver_branch?.toString() === branchId.toString()) {
+                    received += amount;
+                }
+                
+                // Calculate earnings for approved transactions
+                if (tx.status === true) {
+                    console.log(amount)
+                    console.log(calcEarning(amount, commission))
+                    earnings += calcEarning(amount, commission);
+                }
+            });
+            
+            return {
+                totalEarnings: earnings,
+                sentAmount: sent,
+                receivedAmount: received,
+                transactions: transactions.length,
+                ...(periodType === 'today' && { history }),
+                ...(periodType === 'week' && { dailyData }),
+                ...(periodType === 'month' && { 
+                    weeklyData: calculateWeeklyData(transactions, branchId)
+                })
+            };
+        };
+
+        // Helper for monthly weekly data
+        const calculateWeeklyData = (transactions, branchId) => {
+            const weeks = [
+                { week: "Week 1", amount: 0 },
+                { week: "Week 2", amount: 0 },
+                { week: "Week 3", amount: 0 },
+                { week: "Week 4", amount: 0 },
+                { week: "Week 5", amount: 0 } // Added for 5-week months
+            ];
+            
+            transactions.forEach(tx => {
+                try {
+                    const amount = decrypt_number(tx.points);
+                    const txDate = moment(tx.createdAt);
+                    const weekOfMonth = Math.floor(txDate.date() / 7);
+                    const weekIndex = Math.min(weekOfMonth, 4); // Cap at week 5
+                    
+                    weeks[weekIndex].amount += amount;
+                } catch (error) {
+                    console.error("Error processing transaction:", error);
+                }
+            });
+            
+            // Remove empty weeks at the end
+            while (weeks.length > 0 && weeks[weeks.length - 1].amount === 0) {
+                weeks.pop();
+            }
+            
+            return weeks;
+        };
+
+        // Process data
+        const todayData = processTransactions(todayTx, 'today');
+        const weeklyData = processTransactions(weekTx, 'week');
+        const monthlyData = processTransactions(monthTx, 'month');
+
+        return returnCode(res, 200, true, "Dashboard fetched successfully", {
+            today: todayData,
+            week: weeklyData,
+            month: monthlyData
+        });
+
+    } catch (error) {
+        console.error("Dashboard error:", error);
+        return returnCode(res, 500, false, "Internal server error");
+    }
+});
+
+
+
+
+
 export {
     createUser,
     loginUser,
@@ -173,5 +349,6 @@ export {
     updateTransaction,
     deleteTransaction,
     isIEnable,
-    updateTheUser
+    updateTheUser,
+    getDashboardData
 }   
