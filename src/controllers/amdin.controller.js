@@ -8,6 +8,7 @@ import { sendExpoNotification } from "../utils/expoPush.js";
 
 
 
+
 const createAdmin = asyncHandler(async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -166,38 +167,55 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "Transactions fetched successfully", transactions)
 })
 
-const giveTheTractionPermision = asyncHandler(async (req, res) => {
+export const giveTheTractionPermision = asyncHandler(async (req, res) => {
     const { transactions_id } = req.body;
 
     if (!transactions_id) {
-        return returnCode(res, 400, false, "Transactions id is required")
+        return returnCode(res, 400, false, "Transaction id is required");
     }
-    // Fixed: query by _id
-    const transaction = await Transaction.findByIdAndUpdate({ _id: transactions_id }, { admin_permission: true }, { new: true })
+
+    // Update transaction
+    const transaction = await Transaction.findByIdAndUpdate(
+        transactions_id,
+        { admin_permission: true },
+        { new: true }
+    );
 
     if (!transaction) {
-        return returnCode(res, 400, false, "Transaction not found")
+        return returnCode(res, 400, false, "Transaction not found");
     }
 
-    // Send Notification to users of the sender branch
+    // Send notification to users in the sender branch
     try {
-        const users = await User.find({ branch: transaction.sender_branch, expoToken: { $exists: true, $ne: null } });
-        const tokens = users.map(user => user.expoToken);
+        const users = await User.find({
+            branch: transaction.sender_branch,
+            expoToken: { $exists: true, $ne: null },
+        });
+
+        const tokens = users.map((u) => u.expoToken);
 
         if (tokens.length > 0) {
             await sendExpoNotification(
                 tokens,
                 "Transaction Approved",
-                `Transaction of ${transaction.points} points has been approved by admin.`,
-                { transactionId: transaction._id.toString() }
+                `A transaction of ${transaction.points} points has been approved by the admin.`,
+                { transactionId: transaction._id }
             );
         }
     } catch (error) {
         console.error("Error sending notification:", error);
+        // Don’t block the API response if notification fails
     }
 
-    return returnCode(res, 200, true, "Transaction permission given successfully", transaction)
-})
+    return returnCode(
+        res,
+        200,
+        true,
+        "Transaction permission given successfully",
+        transaction
+    );
+});
+
 
 export {
     createAdmin,
