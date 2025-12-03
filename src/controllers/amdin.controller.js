@@ -135,6 +135,25 @@ const disableBrach = asyncHandler(async (req, res) => {
     }
     return returnCode(res, 200, true, "Branch disabled successfully", branch)
 })
+
+const enableBranch = asyncHandler(async(req,res)=>{
+    const  {_id} = req.body;
+
+
+    if(!_id)
+    {
+        return returnCode(res,400,false,"please give the perefect id" ,null )
+    }
+
+    const update_branch = await Branch.findByIdAndUpdate(_id,{active:true})
+
+    if(!update_branch)
+    {
+        return returnCode(res,500,false,"something error to update the branch data",null);
+    }
+
+    return returnCode(res,200,true,"branch enable successfully",update_branch)
+})
 const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     const { branch_id } = req.body;
     if (!branch_id) {
@@ -194,5 +213,6 @@ export {
     disableBrach,
     getTrasactionBranchWise,
     giveTheTractionPermision,
-    updateAdmin
+    updateAdmin,
+    enableBranch
 }

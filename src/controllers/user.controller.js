@@ -156,23 +156,29 @@ const deleteTransaction = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "delete transaction successfully", deleteT);
 })
 
-const updateTheUser = asyncHandler(async(req,res)=>{
-    const {_id,updateobj} = req.body;
+const updateTheUser = asyncHandler(async (req, res) => {
+    const { updateobj } = req.body;
 
-    if(!id)
-    {
-        return returnCode(res,400,false,"please enter all feilds",null)
+    if (!updateobj) {
+        return returnCode(res, 400, false, "updateobj is required", null);
     }
 
-    const updateuser = await User.findByIdAndUpdate(_id,updateobj)
-
-    if(!updateuser)
-    {
-
+    if (!req.user?._id) {
+        return returnCode(res, 400, false, "Invalid user", null);
     }
 
-    return returnCode(res,200,true,"update user successfully",null)
-})
+    const updatedUser = await User.findByIdAndUpdate(
+        req.user._id,
+        updateobj,
+        { new: true }
+    );
+
+    if (!updatedUser) {
+        return returnCode(res, 404, false, "User not found", null);
+    }
+
+    return returnCode(res, 200, true, "User updated successfully", updatedUser);
+});
 
 
 
@@ -181,16 +187,20 @@ const updateTheUser = asyncHandler(async(req,res)=>{
 const getDashboardData = asyncHandler(async (req, res) => {
     try {
         const userId = req.user._id;
-        const user = await User.findById(userId);
-        
-        // Input validation
         if (!userId) {
             return returnCode(res, 400, false, "User ID is required");
         }
 
-        // Parallel fetching for better performance
-        const [todayTx, weekTx, monthTx,brnch] = await Promise.all([
-           
+        const user = await User.findById(userId);
+        if (!user) {
+            return returnCode(res, 404, false, "User not found");
+        }
+        if (!user.branch) {
+            return returnCode(res, 400, false, "User has no branch assigned");
+        }
+
+        // Parallel fetching
+        const [todayTx, weekTx, monthTx, brnch] = await Promise.all([
             Transaction.find({
                 create_by: userId,
                 createdAt: { $gte: moment().startOf("day").toDate() }
@@ -206,45 +216,37 @@ const getDashboardData = asyncHandler(async (req, res) => {
             Branch.findById(user.branch)
         ]);
 
-        // Validate user and branch
-        if (!user) {
-            return returnCode(res, 404, false, "User not found");
-        }
-        
-        if (!user.branch) {
-            return returnCode(res, 400, false, "User has no branch assigned");
-        }
-
-        const branch = await Branch.findById(user.branch);
-        if (!branch) {
+        if (!brnch) {
             return returnCode(res, 404, false, "Branch not found");
         }
 
         const branchId = user.branch;
-        const commission = brnch.commision || 0; // Added fallback
+        const commission = (brnch && Number(brnch.commision)) || 0;
 
-        // Helper function to process transactions
+        // Helper: process transactions
         const processTransactions = (transactions, periodType = 'today') => {
             let sent = 0;
             let received = 0;
             let earnings = 0;
             const history = [];
-            const dailyData = periodType === 'week' ? 
-                Array(7).fill(0).map((_, i) => ({ 
-                    day: moment().day(i).format("ddd"), 
-                    amount: 0 
+            const dailyData = periodType === 'week' ?
+                Array.from({ length: 7 }).map((_, i) => ({
+                    day: moment().day(i).format("ddd"),
+                    amount: 0,
+                    earnings: 0
                 })) : null;
-            
+
             transactions.forEach(tx => {
                 let amount;
                 try {
-                    amount = decrypt_number(tx.points);
+                    amount = Number(decrypt_number(tx.points));
+                    if (Number.isNaN(amount)) throw new Error("Invalid amount");
                 } catch (error) {
-                    console.error("Decryption error:", error);
-                    return; // Skip this transaction
+                    console.error("Decryption/amount error:", error);
+                    return; // skip this tx
                 }
-                
-                // Build history for today only (to reduce memory)
+
+                // today's history
                 if (periodType === 'today') {
                     history.push({
                         time: moment(tx.createdAt).format("hh:mm A"),
@@ -253,28 +255,30 @@ const getDashboardData = asyncHandler(async (req, res) => {
                         status: tx.status
                     });
                 }
-                
-                // Update daily data for week
+
+                // weekly daily aggregation
                 if (periodType === 'week' && dailyData) {
-                    const dayIndex = moment(tx.createdAt).day();
+                    const dayIndex = moment(tx.createdAt).day(); // 0..6
                     dailyData[dayIndex].amount += amount;
+                    if (tx.status === true) {
+                        const e = calcEarning(amount, commission);
+                        dailyData[dayIndex].earnings += e;
+                    }
                 }
-                
-                // Calculate sent/received
+
+                // sent / received totals
                 if (tx.sender_branch?.toString() === branchId.toString()) {
                     sent += amount;
                 } else if (tx.receiver_branch?.toString() === branchId.toString()) {
                     received += amount;
                 }
-                
-                // Calculate earnings for approved transactions
+
+                // overall earnings for this period (only approved)
                 if (tx.status === true) {
-                    console.log(amount)
-                    console.log(calcEarning(amount, commission))
                     earnings += calcEarning(amount, commission);
                 }
             });
-            
+
             return {
                 totalEarnings: earnings,
                 sentAmount: sent,
@@ -282,44 +286,47 @@ const getDashboardData = asyncHandler(async (req, res) => {
                 transactions: transactions.length,
                 ...(periodType === 'today' && { history }),
                 ...(periodType === 'week' && { dailyData }),
-                ...(periodType === 'month' && { 
+                ...(periodType === 'month' && {
                     weeklyData: calculateWeeklyData(transactions, branchId)
                 })
             };
         };
 
-        // Helper for monthly weekly data
-        const calculateWeeklyData = (transactions, branchId) => {
+        // monthly -> weekly buckets (week 1..5)
+        const calculateWeeklyData = (transactions) => {
             const weeks = [
-                { week: "Week 1", amount: 0 },
-                { week: "Week 2", amount: 0 },
-                { week: "Week 3", amount: 0 },
-                { week: "Week 4", amount: 0 },
-                { week: "Week 5", amount: 0 } // Added for 5-week months
+                { week: "Week 1", amount: 0, earnings: 0 },
+                { week: "Week 2", amount: 0, earnings: 0 },
+                { week: "Week 3", amount: 0, earnings: 0 },
+                { week: "Week 4", amount: 0, earnings: 0 },
+                { week: "Week 5", amount: 0, earnings: 0 }
             ];
-            
+
             transactions.forEach(tx => {
                 try {
-                    const amount = decrypt_number(tx.points);
+                    const amount = Number(decrypt_number(tx.points));
+                    if (Number.isNaN(amount)) throw new Error("Invalid amount");
+
                     const txDate = moment(tx.createdAt);
-                    const weekOfMonth = Math.floor(txDate.date() / 7);
-                    const weekIndex = Math.min(weekOfMonth, 4); // Cap at week 5
-                    
+                    // 1-7 => week 0, 8-14 => week 1, ...
+                    const weekIndex = Math.min(4, Math.max(0, Math.ceil(txDate.date() / 7) - 1));
                     weeks[weekIndex].amount += amount;
+                    if (tx.status === true) {
+                        weeks[weekIndex].earnings += calcEarning(amount, commission);
+                    }
                 } catch (error) {
-                    console.error("Error processing transaction:", error);
+                    console.error("Error processing transaction for monthly weeks:", error);
                 }
             });
-            
-            // Remove empty weeks at the end
-            while (weeks.length > 0 && weeks[weeks.length - 1].amount === 0) {
+
+            // trim trailing empty weeks
+            while (weeks.length > 0 && weeks[weeks.length - 1].amount === 0 && weeks[weeks.length - 1].earnings === 0) {
                 weeks.pop();
             }
-            
+
             return weeks;
         };
 
-        // Process data
         const todayData = processTransactions(todayTx, 'today');
         const weeklyData = processTransactions(weekTx, 'week');
         const monthlyData = processTransactions(monthTx, 'month');
