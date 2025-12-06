@@ -5,7 +5,7 @@ import { Transaction } from "../models/transaction.model.js"
 import { Branch } from "../models/branch.model.js";
 import { User } from "../models/user.model.js";
 import { sendExpoNotification } from "../utils/expoPush.js";
-import { decrypt_number } from "../secrets/decrypt.js";
+import { decrypt_number, decrypt_text } from "../secrets/decrypt.js";
 
 
 
@@ -138,23 +138,21 @@ const disableBrach = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "Branch disabled successfully", branch)
 })
 
-const enableBranch = asyncHandler(async(req,res)=>{
-    const  {_id} = req.body;
+const enableBranch = asyncHandler(async (req, res) => {
+    const { _id } = req.body;
 
 
-    if(!_id)
-    {
-        return returnCode(res,400,false,"please give the perefect id" ,null )
+    if (!_id) {
+        return returnCode(res, 400, false, "please give the perefect id", null)
     }
 
-    const update_branch = await Branch.findByIdAndUpdate(_id,{active:true})
+    const update_branch = await Branch.findByIdAndUpdate(_id, { active: true })
 
-    if(!update_branch)
-    {
-        return returnCode(res,500,false,"something error to update the branch data",null);
+    if (!update_branch) {
+        return returnCode(res, 500, false, "something error to update the branch data", null);
     }
 
-    return returnCode(res,200,true,"branch enable successfully",update_branch)
+    return returnCode(res, 200, true, "branch enable successfully", update_branch)
 })
 const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     const { branch_id } = req.body;
@@ -192,6 +190,7 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
             branch: transaction.sender_branch,
             expoToken: { $exists: true, $ne: null },
         });
+        const branch = await Branch.findById(transaction.sender_branch)
 
         const tokens = users.map((u) => u.expoToken);
 
@@ -199,10 +198,16 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
             await sendExpoNotification(
                 tokens,
                 "New Transaction Created",
-                `A new transaction of ${transaction.points} points has been created by the ${transaction.sender_branch} branch. 
+                `A new transaction of ${decrypt_number(transaction.points)} points has been created by the ${branch.branch_name} branch. 
 It has been approved by the admin.
 `,
-                { transactionId: transaction._id }
+                { transaction: {...transaction,
+                    points:decrypt_number(transaction.points),
+                    receiver_name:decrypt_text(transaction.receiver_name),
+                    receiver_mobile:decrypt_number(transaction.receiver_mobile),
+                    sender_name:decrypt_text(transaction.sender_name),
+                    sender_mobile:decrypt_number(transaction.sender_mobile)
+                }}
             );
         }
     } catch (error) {

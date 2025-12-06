@@ -5,6 +5,7 @@ import { Transaction } from "../models/transaction.model.js";
 import { Branch } from "../models/branch.model.js";
 import moment from "moment";
 import { decrypt_number } from "../secrets/decrypt.js";
+import { UserAccessLog } from "../models/useraccesslog.model.js"
 
 
 const getPoints = (p) => Number(decrypt_number(p));
@@ -182,8 +183,6 @@ const updateTheUser = asyncHandler(async (req, res) => {
 
 
 
-
-
 const getDashboardData = asyncHandler(async (req, res) => {
     try {
         const userId = req.user._id;
@@ -343,6 +342,20 @@ const getDashboardData = asyncHandler(async (req, res) => {
     }
 });
 
+const saveLogs = asyncHandler(async(req,res)=>{
+    const  {ip_address, device_info} = req.body;
+    const username = req.user.username;
+
+    const save_log = await UserAccessLog.create({username , ip_address,device_info})
+
+    if(!save_log){
+        return returnCode(res,500,false,"something error to save the logs",null)
+    }
+
+    return returnCode(res,200,true,"Data save successfully",save_log)
+
+})
+
 
 
 
@@ -357,5 +370,6 @@ export {
     deleteTransaction,
     isIEnable,
     updateTheUser,
-    getDashboardData
+    getDashboardData,
+    saveLogs
 }   
