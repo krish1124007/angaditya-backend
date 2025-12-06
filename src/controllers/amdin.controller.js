@@ -168,7 +168,7 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "Transactions fetched successfully", transactions)
 })
 
-export const giveTheTractionPermision = asyncHandler(async (req, res) => {
+const giveTheTractionPermision = asyncHandler(async (req, res) => {
     const { transactions_id } = req.body;
 
     if (!transactions_id) {
