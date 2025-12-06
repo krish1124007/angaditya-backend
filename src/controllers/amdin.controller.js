@@ -5,6 +5,7 @@ import { Transaction } from "../models/transaction.model.js"
 import { Branch } from "../models/branch.model.js";
 import { User } from "../models/user.model.js";
 import { sendExpoNotification } from "../utils/expoPush.js";
+import { decrypt_number } from "../secrets/decrypt.js";
 
 
 
@@ -197,8 +198,10 @@ export const giveTheTractionPermision = asyncHandler(async (req, res) => {
         if (tokens.length > 0) {
             await sendExpoNotification(
                 tokens,
-                "Transaction Approved",
-                `A transaction of ${transaction.points} points has been approved by the admin.`,
+                "New Transaction Created",
+                `A new transaction of ${transaction.points} points has been created by the ${transaction.sender_branch} branch. 
+It has been approved by the admin.
+`,
                 { transactionId: transaction._id }
             );
         }
