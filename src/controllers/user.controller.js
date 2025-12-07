@@ -156,8 +156,8 @@ const updateTransaction = asyncHandler(async (req, res) => {
     ]);
 
     // Earnings calculations
-    const creatorEarning = creator.total_earning + calcEarning(transaction.points, creatorBranch.commision);
-    const receiverEarning = receiver.total_earning + calcEarning(transaction.points, receiverBranch.commision);
+    const creatorEarning = creator.total_earning + calcEarning(decrypt_number(transaction.points), creatorBranch.commision);
+    const receiverEarning = receiver.total_earning + calcEarning(decrypt_number(transaction.points), receiverBranch.commision);
 
     // Update both earnings using $inc (atomic & safe)
     await Promise.all([
