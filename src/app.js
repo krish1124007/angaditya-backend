@@ -13,22 +13,7 @@ const app = express();
 app.use(express.json());
 app.use(cors({ origin: "*" }));
 
-const server = http.createServer(app);
 
-const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] }
-});
-
-// Expose io globally through helper
-setSocketServer(io);
-
-io.on("connection", (socket) => {
-  console.log("New client connected:", socket.id);
-
-  socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
-  });
-});
 
 
 // Routes
@@ -36,4 +21,4 @@ app.use("/api/v1/admin",admin_router);
 app.use("/api/v1/user",user_router);
 
 
-export {server}
+export {app}
