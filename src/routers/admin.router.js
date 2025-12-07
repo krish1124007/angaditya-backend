@@ -13,7 +13,8 @@ import {
     getTrasactionBranchWise,
     giveTheTractionPermision,
     updateAdmin,
-    enableBranch
+    enableBranch,
+    getAllUserLogs
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
 import { auth } from "../middlewares/auth.js";
@@ -35,5 +36,6 @@ router.route("/disable-branch").post(auth,disableBrach);
 router.route("/get-transaction-branch-wise").post(auth,getTrasactionBranchWise);
 router.route("/give-transaction-permission").post(auth,giveTheTractionPermision);
 router.route("/update-admin").post(auth,updateAdmin);
-router.route("/enable-branch").post(auth ,enableBranch)
+router.route("/enable-branch").post(auth ,enableBranch);
+router.route("/get-all-user-logs").post(auth , getAllUserLogs)
 export const admin_router = router;
