@@ -577,11 +577,11 @@ const deleteUser = asyncHandler(async (req, res) => {
 });
 
 const updateUser = asyncHandler(async (req, res) => {
-    const { user_id } = req.body;
+    const { user_id,update_body } = req.body;
     if (!user_id) {
         return returnCode(res, 400, false, "User id is required");
     }
-    await User.findByIdAndUpdate(user_id, req.body);
+    await User.findByIdAndUpdate(user_id, update_body);
     return returnCode(res, 200, true, "User updated successfully");
 });
 
