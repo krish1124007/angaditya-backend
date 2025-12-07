@@ -175,11 +175,11 @@ const updateTransaction = asyncHandler(async (req, res) => {
 
 
 
-    if (!update) {
+    if (!transaction) {
         return returnCode(res, 400, false, "your transaction can't find by the syste", null);
     }
 
-    return returnCode(res, 200, true, "update transaction successfully", update);
+    return returnCode(res, 200, true, "update transaction successfully", transaction);
 })
 
 const deleteTransaction = asyncHandler(async (req, res) => {
