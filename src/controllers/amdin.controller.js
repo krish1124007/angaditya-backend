@@ -66,7 +66,7 @@ const getTransactionWithBranchNames = async (transactionId) => {
                 createdAt: 1,
                 updatedAt: 1,
                 __v: 1,
-                
+
                 // Additional calculated fields
                 receiver_branch_name: "$receiverBranch.branch_name",
                 sender_branch_name: "$senderBranch.branch_name",
@@ -183,7 +183,7 @@ const getAllTransactions = asyncHandler(async (req, res) => {
                 createdAt: 1,
                 updatedAt: 1,
                 __v: 1,
-                
+
                 // Additional calculated fields
                 receiver_branch_name: "$receiverBranch.branch_name",
                 sender_branch_name: "$senderBranch.branch_name",
@@ -207,7 +207,7 @@ const getTodayTransactions = asyncHandler(async (req, res) => {
 
     const transactions = await Transaction.aggregate([
         { $match: { date: { $gte: start } } },
-        
+
         // Join sender branch
         {
             $lookup: {
@@ -259,7 +259,7 @@ const getTodayTransactions = asyncHandler(async (req, res) => {
                 createdAt: 1,
                 updatedAt: 1,
                 __v: 1,
-                
+
                 // Additional calculated fields
                 receiver_branch_name: "$receiverBranch.branch_name",
                 sender_branch_name: "$senderBranch.branch_name",
@@ -351,7 +351,7 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
 
     const transactions = await Transaction.aggregate([
         { $match: { sender_branch: new mongoose.Types.ObjectId(branch_id) } },
-        
+
         // Join sender branch
         {
             $lookup: {
@@ -403,7 +403,7 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
                 createdAt: 1,
                 updatedAt: 1,
                 __v: 1,
-                
+
                 // Additional calculated fields
                 receiver_branch_name: "$receiverBranch.branch_name",
                 sender_branch_name: "$senderBranch.branch_name",
@@ -501,7 +501,7 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
                 createdAt: 1,
                 updatedAt: 1,
                 __v: 1,
-                
+
                 // Additional calculated fields
                 receiver_branch_name: "$receiverBranch.branch_name",
                 sender_branch_name: "$senderBranch.branch_name",
@@ -517,7 +517,7 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
     ]);
 
     const enrichedTx = tx[0];
-    
+
     /* decrypt fields */
     enrichedTx.points = decrypt_number(transaction.points);
     enrichedTx.receiver_name = decrypt_text(transaction.receiver_name);
@@ -556,13 +556,13 @@ const getAllUserLogs = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "Logs fetched", data);
 });
 
-const getUser = asyncHandler(async(req,res)=>{
-   
+const getUser = asyncHandler(async (req, res) => {
+
     const data = await User.find({});
     return returnCode(res, 200, true, "Users fetched", data);
 })
 
-const deleteAllUser = asyncHandler(async(req,res)=>{
+const deleteAllUser = asyncHandler(async (req, res) => {
     await User.deleteMany({});
     return returnCode(res, 200, true, "All users deleted");
 })
@@ -577,7 +577,7 @@ const deleteUser = asyncHandler(async (req, res) => {
 });
 
 const updateUser = asyncHandler(async (req, res) => {
-    const { user_id,update_body } = req.body;
+    const { user_id, update_body } = req.body;
     if (!user_id) {
         return returnCode(res, 400, false, "User id is required");
     }
@@ -587,7 +587,104 @@ const updateUser = asyncHandler(async (req, res) => {
 
 
 
-/* ---------------------- EXPORT ---------------------- */
+/* ---------------------- DAILY STATS ---------------------- */
+
+const getDailyStats = asyncHandler(async (req, res) => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const transactions = await Transaction.aggregate([
+        { $match: { createdAt: { $gte: start } } },
+        {
+            $lookup: {
+                from: "branches",
+                localField: "sender_branch",
+                foreignField: "_id",
+                as: "senderBranch"
+            }
+        },
+        { $unwind: { path: "$senderBranch", preserveNullAndEmptyArrays: true } },
+        {
+            $lookup: {
+                from: "branches",
+                localField: "receiver_branch",
+                foreignField: "_id",
+                as: "receiverBranch"
+            }
+        },
+        { $unwind: { path: "$receiverBranch", preserveNullAndEmptyArrays: true } },
+        {
+            $lookup: {
+                from: "users",
+                localField: "create_by",
+                foreignField: "_id",
+                as: "creator"
+            }
+        },
+        { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } }
+    ]);
+
+    let total_amount = 0;
+    const user_earnings = {};
+    const branch_sent = {};
+    const branch_received = {};
+
+    transactions.forEach(tx => {
+        try {
+            const points = Number(decrypt_number(tx.points));
+            if (!isNaN(points)) {
+                total_amount += points;
+
+                // --- User Earnings & Sender Branch Stats ---
+                if (tx.senderBranch) {
+                    const bName = tx.senderBranch.branch_name;
+
+                    // User Earning (Commission Logic)
+                    if (tx.creator) {
+                        const commission = tx.senderBranch.commision || 0;
+                        const earning = (commission / 100) * points;
+                        const username = tx.creator.username;
+
+                        if (!user_earnings[username]) user_earnings[username] = 0;
+                        user_earnings[username] += earning;
+                    }
+
+                    // Branch Sent Stats
+                    if (!branch_sent[bName]) {
+                        branch_sent[bName] = { count: 0, amount: 0 };
+                    }
+                    branch_sent[bName].count += 1;
+                    branch_sent[bName].amount += points;
+                }
+
+                // --- Receiver Branch Stats ---
+                if (tx.receiverBranch) {
+                    const bName = tx.receiverBranch.branch_name;
+                    if (!branch_received[bName]) {
+                        branch_received[bName] = { count: 0, amount: 0 };
+                    }
+                    branch_received[bName].count += 1;
+                    branch_received[bName].amount += points;
+                }
+            }
+        } catch (err) {
+            console.error("Error processing transaction for stats:", tx._id, err);
+        }
+    });
+
+    // Format outputs
+    const earning_list = Object.keys(user_earnings).map(u => ({ username: u, earned: user_earnings[u] }));
+    const sent_list = Object.keys(branch_sent).map(b => ({ branch_name: b, ...branch_sent[b] }));
+    const received_list = Object.keys(branch_received).map(b => ({ branch_name: b, ...branch_received[b] }));
+
+    return returnCode(res, 200, true, "Daily stats fetched", {
+        total_amount,
+        total_count: transactions.length,
+        user_earnings: earning_list,
+        branch_sent_stats: sent_list,
+        branch_received_stats: received_list
+    });
+});
 
 export {
     createAdmin,
@@ -610,5 +707,6 @@ export {
     deleteAllUser,
     deleteUser,
     updateUser,
-    deleteAllTransactions
+    deleteAllTransactions,
+    getDailyStats
 };
