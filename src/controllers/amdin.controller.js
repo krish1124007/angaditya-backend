@@ -528,7 +528,7 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
     /* Notify */
     try {
         const users = await User.find({
-            branch: transaction.sender_branch,
+            branch: transaction.receiver_branch,
             expoToken: { $exists: true, $ne: null },
         });
 
