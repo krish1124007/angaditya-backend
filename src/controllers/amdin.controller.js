@@ -24,7 +24,7 @@ const getTransactionWithBranchNames = async (transactionId) => {
                 as: "senderBranch",
             },
         },
-        { $unwind: "$senderBranch" },
+        { $unwind: { path: "$senderBranch", preserveNullAndEmptyArrays: true } },
 
         // Join receiver branch
         {
@@ -35,20 +35,48 @@ const getTransactionWithBranchNames = async (transactionId) => {
                 as: "receiverBranch",
             },
         },
-        { $unwind: "$receiverBranch" },
+        { $unwind: { path: "$receiverBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join user who created the transaction
+        {
+            $lookup: {
+                from: "users",
+                localField: "create_by",
+                foreignField: "_id",
+                as: "creator",
+            },
+        },
+        { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
 
         {
             $project: {
+                // Original fields
                 _id: 1,
-                points: 1,
-                admin_permission: 1,
-                date: 1,
-                sender_branch: 1,
+                create_by: 1,
                 receiver_branch: 1,
-
-                // Decrypted values will be attached later
-                sender_branch_name: "$senderBranch.branch_name",
+                sender_branch: 1,
+                points: 1,
+                receiver_name: 1,
+                receiver_mobile: 1,
+                sender_name: 1,
+                sender_mobile: 1,
+                status: 1,
+                stauts: 1,
+                admin_permission: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                __v: 1,
+                
+                // Additional calculated fields
                 receiver_branch_name: "$receiverBranch.branch_name",
+                sender_branch_name: "$senderBranch.branch_name",
+                created_by_name: {
+                    $cond: {
+                        if: { $and: ["$creator", "$creator.username"] },
+                        then: "$creator.username",
+                        else: null
+                    }
+                }
             },
         },
     ]);
@@ -103,7 +131,73 @@ const updateAdmin = asyncHandler(async (req, res) => {
 });
 
 const getAllTransactions = asyncHandler(async (req, res) => {
-    const transactions = await Transaction.find();
+    const transactions = await Transaction.aggregate([
+        // Join sender branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "sender_branch",
+                foreignField: "_id",
+                as: "senderBranch",
+            },
+        },
+        { $unwind: { path: "$senderBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join receiver branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "receiver_branch",
+                foreignField: "_id",
+                as: "receiverBranch",
+            },
+        },
+        { $unwind: { path: "$receiverBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join user who created the transaction
+        {
+            $lookup: {
+                from: "users",
+                localField: "create_by",
+                foreignField: "_id",
+                as: "creator",
+            },
+        },
+        { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+
+        {
+            $project: {
+                // Original fields
+                _id: 1,
+                create_by: 1,
+                receiver_branch: 1,
+                sender_branch: 1,
+                points: 1,
+                receiver_name: 1,
+                receiver_mobile: 1,
+                sender_name: 1,
+                sender_mobile: 1,
+                status: 1,
+                stauts: 1,
+                admin_permission: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                __v: 1,
+                
+                // Additional calculated fields
+                receiver_branch_name: "$receiverBranch.branch_name",
+                sender_branch_name: "$senderBranch.branch_name",
+                created_by_name: {
+                    $cond: {
+                        if: { $and: ["$creator", "$creator.username"] },
+                        then: "$creator.username",
+                        else: null
+                    }
+                }
+            },
+        },
+    ]);
+
     return returnCode(res, 200, true, "Transactions fetched successfully", transactions);
 });
 
@@ -111,7 +205,74 @@ const getTodayTransactions = asyncHandler(async (req, res) => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
 
-    const transactions = await Transaction.find({ date: { $gte: start } });
+    const transactions = await Transaction.aggregate([
+        { $match: { date: { $gte: start } } },
+        
+        // Join sender branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "sender_branch",
+                foreignField: "_id",
+                as: "senderBranch",
+            },
+        },
+        { $unwind: { path: "$senderBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join receiver branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "receiver_branch",
+                foreignField: "_id",
+                as: "receiverBranch",
+            },
+        },
+        { $unwind: { path: "$receiverBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join user who created the transaction
+        {
+            $lookup: {
+                from: "users",
+                localField: "create_by",
+                foreignField: "_id",
+                as: "creator",
+            },
+        },
+        { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+
+        {
+            $project: {
+                // Original fields
+                _id: 1,
+                create_by: 1,
+                receiver_branch: 1,
+                sender_branch: 1,
+                points: 1,
+                receiver_name: 1,
+                receiver_mobile: 1,
+                sender_name: 1,
+                sender_mobile: 1,
+                status: 1,
+                stauts: 1,
+                admin_permission: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                __v: 1,
+                
+                // Additional calculated fields
+                receiver_branch_name: "$receiverBranch.branch_name",
+                sender_branch_name: "$senderBranch.branch_name",
+                created_by_name: {
+                    $cond: {
+                        if: { $and: ["$creator", "$creator.username"] },
+                        then: "$creator.username",
+                        else: null
+                    }
+                }
+            },
+        },
+    ]);
 
     return returnCode(res, 200, true, "Today's transactions fetched", transactions);
 });
@@ -188,9 +349,76 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     const { branch_id } = req.body;
     if (!branch_id) return returnCode(res, 400, false, "Branch id is required");
 
-    const list = await Transaction.find({ sender_branch: branch_id });
+    const transactions = await Transaction.aggregate([
+        { $match: { sender_branch: new mongoose.Types.ObjectId(branch_id) } },
+        
+        // Join sender branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "sender_branch",
+                foreignField: "_id",
+                as: "senderBranch",
+            },
+        },
+        { $unwind: { path: "$senderBranch", preserveNullAndEmptyArrays: true } },
 
-    return returnCode(res, 200, true, "Transactions fetched", list);
+        // Join receiver branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "receiver_branch",
+                foreignField: "_id",
+                as: "receiverBranch",
+            },
+        },
+        { $unwind: { path: "$receiverBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join user who created the transaction
+        {
+            $lookup: {
+                from: "users",
+                localField: "create_by",
+                foreignField: "_id",
+                as: "creator",
+            },
+        },
+        { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+
+        {
+            $project: {
+                // Original fields
+                _id: 1,
+                create_by: 1,
+                receiver_branch: 1,
+                sender_branch: 1,
+                points: 1,
+                receiver_name: 1,
+                receiver_mobile: 1,
+                sender_name: 1,
+                sender_mobile: 1,
+                status: 1,
+                stauts: 1,
+                admin_permission: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                __v: 1,
+                
+                // Additional calculated fields
+                receiver_branch_name: "$receiverBranch.branch_name",
+                sender_branch_name: "$senderBranch.branch_name",
+                created_by_name: {
+                    $cond: {
+                        if: { $and: ["$creator", "$creator.username"] },
+                        then: "$creator.username",
+                        else: null
+                    }
+                }
+            },
+        },
+    ]);
+
+    return returnCode(res, 200, true, "Transactions fetched", transactions);
 });
 
 /* ---------------------- GIVE PERMISSION + NOTIFY ---------------------- */
@@ -213,15 +441,84 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
         return returnCode(res, 400, false, "Transaction not found");
     }
 
-    // Fetch enriched transaction
-    const tx = await getTransactionWithBranchNames(transactions_id);
+    // Fetch enriched transaction with all fields including created_by_name
+    const tx = await Transaction.aggregate([
+        { $match: { _id: new mongoose.Types.ObjectId(transactions_id) } },
 
+        // Join sender branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "sender_branch",
+                foreignField: "_id",
+                as: "senderBranch",
+            },
+        },
+        { $unwind: { path: "$senderBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join receiver branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "receiver_branch",
+                foreignField: "_id",
+                as: "receiverBranch",
+            },
+        },
+        { $unwind: { path: "$receiverBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join user who created the transaction
+        {
+            $lookup: {
+                from: "users",
+                localField: "create_by",
+                foreignField: "_id",
+                as: "creator",
+            },
+        },
+        { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+
+        {
+            $project: {
+                // Original fields
+                _id: 1,
+                create_by: 1,
+                receiver_branch: 1,
+                sender_branch: 1,
+                points: 1,
+                receiver_name: 1,
+                receiver_mobile: 1,
+                sender_name: 1,
+                sender_mobile: 1,
+                status: 1,
+                stauts: 1,
+                admin_permission: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                __v: 1,
+                
+                // Additional calculated fields
+                receiver_branch_name: "$receiverBranch.branch_name",
+                sender_branch_name: "$senderBranch.branch_name",
+                created_by_name: {
+                    $cond: {
+                        if: { $and: ["$creator", "$creator.username"] },
+                        then: "$creator.username",
+                        else: null
+                    }
+                }
+            },
+        },
+    ]);
+
+    const enrichedTx = tx[0];
+    
     /* decrypt fields */
-    tx.points = decrypt_number(transaction.points);
-    tx.receiver_name = decrypt_text(transaction.receiver_name);
-    tx.receiver_mobile = decrypt_number(transaction.receiver_mobile);
-    tx.sender_name = decrypt_text(transaction.sender_name);
-    tx.sender_mobile = decrypt_number(transaction.sender_mobile);
+    enrichedTx.points = decrypt_number(transaction.points);
+    enrichedTx.receiver_name = decrypt_text(transaction.receiver_name);
+    enrichedTx.receiver_mobile = decrypt_number(transaction.receiver_mobile);
+    enrichedTx.sender_name = decrypt_text(transaction.sender_name);
+    enrichedTx.sender_mobile = decrypt_number(transaction.sender_mobile);
 
     /* Notify */
     try {
@@ -236,15 +533,15 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
             await sendExpoNotification(
                 tokens,
                 "Transaction Approved",
-                `A transaction of ${tx.points} points was created by ${tx.sender_branch_name} and sent to ${tx.receiver_branch_name}. It has been approved.`,
-                { transaction: tx }
+                `A transaction of ${enrichedTx.points} points was created by ${enrichedTx.sender_branch_name} and sent to ${enrichedTx.receiver_branch_name}. It has been approved.`,
+                { transaction: enrichedTx }
             );
         }
     } catch (err) {
         console.log("Notification error:", err);
     }
 
-    return returnCode(res, 200, true, "Permission granted successfully", tx);
+    return returnCode(res, 200, true, "Permission granted successfully", enrichedTx);
 });
 
 /* ---------------------- ACCESS LOGS ---------------------- */
