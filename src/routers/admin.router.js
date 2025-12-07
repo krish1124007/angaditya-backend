@@ -14,7 +14,12 @@ import {
     giveTheTractionPermision,
     updateAdmin,
     enableBranch,
-    getAllUserLogs
+    getAllUserLogs,
+    getUser,
+    deleteAllUser,
+    deleteUser,
+    updateUser,
+    deleteAllTransactions
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
 import { auth } from "../middlewares/auth.js";
@@ -37,5 +42,10 @@ router.route("/get-transaction-branch-wise").post(auth,getTrasactionBranchWise);
 router.route("/give-transaction-permission").post(auth,giveTheTractionPermision);
 router.route("/update-admin").post(auth,updateAdmin);
 router.route("/enable-branch").post(auth ,enableBranch);
-router.route("/get-all-user-logs").post(auth , getAllUserLogs)
+router.route("/get-all-user-logs").post(auth , getAllUserLogs);
+router.route("/get-user").post(auth , getUser);
+router.route("/delete-all-user").post(auth , deleteAllUser);
+router.route("/delete-user").post(auth , deleteUser);
+router.route("/update-user").post(auth , updateUser);
+router.route("/delete-all-transaction").post(auth , deleteAllTransactions);
 export const admin_router = router;

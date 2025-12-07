@@ -421,6 +421,11 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "Transactions fetched", transactions);
 });
 
+const deleteAllTransactions = asyncHandler(async (req, res) => {
+    await Transaction.deleteMany({});
+    return returnCode(res, 200, true, "All transactions deleted");
+});
+
 /* ---------------------- GIVE PERMISSION + NOTIFY ---------------------- */
 
 const giveTheTractionPermision = asyncHandler(async (req, res) => {
@@ -551,6 +556,37 @@ const getAllUserLogs = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "Logs fetched", data);
 });
 
+const getUser = asyncHandler(async(req,res)=>{
+   
+    const data = await User.find({});
+    return returnCode(res, 200, true, "Users fetched", data);
+})
+
+const deleteAllUser = asyncHandler(async(req,res)=>{
+    await User.deleteMany({});
+    return returnCode(res, 200, true, "All users deleted");
+})
+
+const deleteUser = asyncHandler(async (req, res) => {
+    const { user_id } = req.body;
+    if (!user_id) {
+        return returnCode(res, 400, false, "User id is required");
+    }
+    await User.findByIdAndDelete(user_id);
+    return returnCode(res, 200, true, "User deleted successfully");
+});
+
+const updateUser = asyncHandler(async (req, res) => {
+    const { user_id } = req.body;
+    if (!user_id) {
+        return returnCode(res, 400, false, "User id is required");
+    }
+    await User.findByIdAndUpdate(user_id, req.body);
+    return returnCode(res, 200, true, "User updated successfully");
+});
+
+
+
 /* ---------------------- EXPORT ---------------------- */
 
 export {
@@ -570,4 +606,9 @@ export {
     updateAdmin,
     enableBranch,
     getAllUserLogs,
+    getUser,
+    deleteAllUser,
+    deleteUser,
+    updateUser,
+    deleteAllTransactions
 };

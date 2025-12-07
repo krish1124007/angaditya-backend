@@ -135,8 +135,45 @@ const updateTransaction = asyncHandler(async (req, res) => {
     const { id } = req.params;
     console.log(id)
 
-    const update = await Transaction.findByIdAndUpdate(id, { status: true }, { new: true });
-    console.log(update)
+
+
+    // Update the transaction status
+    const transaction = await Transaction.findByIdAndUpdate(
+        id,
+        { status: true },
+        { new: true }
+    );
+
+    // Fetch both users + their branches in parallel
+    const [creator, receiver] = await Promise.all([
+        User.findById(transaction.create_by).lean(),
+        User.findById(req.user._id).lean()
+    ]);
+
+    const [creatorBranch, receiverBranch] = await Promise.all([
+        Branch.findById(creator.branch).lean(),
+        Branch.findById(receiver.branch).lean()
+    ]);
+
+    // Earnings calculations
+    const creatorEarning = creator.total_earning + calcEarning(transaction.points, creatorBranch.commision);
+    const receiverEarning = receiver.total_earning + calcEarning(transaction.points, receiverBranch.commision);
+
+    // Update both earnings using $inc (atomic & safe)
+    await Promise.all([
+        User.findByIdAndUpdate(
+            creator._id,
+            { $inc: { total_earning: creatorEarning } }
+        ),
+
+        User.findByIdAndUpdate(
+            receiver._id,
+            { $inc: { total_earning: receiverEarning } }
+        )
+    ]);
+
+
+
 
     if (!update) {
         return returnCode(res, 400, false, "your transaction can't find by the syste", null);
@@ -185,6 +222,7 @@ const updateTheUser = asyncHandler(async (req, res) => {
 
 const getDashboardData = asyncHandler(async (req, res) => {
     try {
+
         const userId = req.user._id;
         if (!userId) {
             return returnCode(res, 400, false, "User ID is required");
@@ -194,12 +232,12 @@ const getDashboardData = asyncHandler(async (req, res) => {
         if (!user) {
             return returnCode(res, 404, false, "User not found");
         }
+
         if (!user.branch) {
             return returnCode(res, 400, false, "User has no branch assigned");
         }
 
-        // Parallel fetching
-        const [todayTx, weekTx, monthTx, brnch] = await Promise.all([
+        const [todayTx, weekTx, monthTx, branch] = await Promise.all([
             Transaction.find({
                 create_by: userId,
                 createdAt: { $gte: moment().startOf("day").toDate() }
@@ -215,125 +253,122 @@ const getDashboardData = asyncHandler(async (req, res) => {
             Branch.findById(user.branch)
         ]);
 
-        if (!brnch) {
+        if (!branch) {
             return returnCode(res, 404, false, "Branch not found");
         }
 
         const branchId = user.branch;
-        const commission = (brnch && Number(brnch.commision)) || 0;
 
-        // Helper: process transactions
-        const processTransactions = (transactions, periodType = 'today') => {
+        // Helper
+        const processTransactions = (transactions, periodType = "today") => {
             let sent = 0;
             let received = 0;
-            let earnings = 0;
             const history = [];
-            const dailyData = periodType === 'week' ?
-                Array.from({ length: 7 }).map((_, i) => ({
-                    day: moment().day(i).format("ddd"),
-                    amount: 0,
-                    earnings: 0
-                })) : null;
 
-            transactions.forEach(tx => {
+            const dailyData = periodType === "week"
+                ? Array.from({ length: 7 }).map((_, i) => ({
+                    day: moment().day(i).format("ddd"),
+                    amount: 0
+                }))
+                : null;
+
+            transactions.forEach((tx) => {
                 let amount;
                 try {
                     amount = Number(decrypt_number(tx.points));
-                    if (Number.isNaN(amount)) throw new Error("Invalid amount");
-                } catch (error) {
-                    console.error("Decryption/amount error:", error);
-                    return; // skip this tx
+                    if (Number.isNaN(amount)) throw new Error();
+                } catch {
+                    return;
                 }
 
-                // today's history
-                if (periodType === 'today') {
-                    history.push({
-                        time: moment(tx.createdAt).format("hh:mm A"),
-                        amount,
-                        type: tx.receiver_branch?.toString() === branchId.toString() ? "received" : "sent",
-                        status: tx.status
-                    });
-                }
-
-                // weekly daily aggregation
-                if (periodType === 'week' && dailyData) {
-                    const dayIndex = moment(tx.createdAt).day(); // 0..6
-                    dailyData[dayIndex].amount += amount;
-                    if (tx.status === true) {
-                        const e = calcEarning(amount, commission);
-                        dailyData[dayIndex].earnings += e;
-                    }
-                }
-
-                // sent / received totals
                 if (tx.sender_branch?.toString() === branchId.toString()) {
                     sent += amount;
                 } else if (tx.receiver_branch?.toString() === branchId.toString()) {
                     received += amount;
                 }
 
-                // overall earnings for this period (only approved)
-                if (tx.status === true) {
-                    earnings += calcEarning(amount, commission);
+                if (periodType === "today") {
+                    history.push({
+                        time: moment(tx.createdAt).format("hh:mm A"),
+                        amount,
+                        type: tx.receiver_branch?.toString() === branchId.toString()
+                            ? "received"
+                            : "sent",
+                        status: tx.status
+                    });
+                }
+
+                if (periodType === "week" && dailyData) {
+                    const dayIndex = moment(tx.createdAt).day();
+                    dailyData[dayIndex].amount += amount;
                 }
             });
 
             return {
-                totalEarnings: earnings,
                 sentAmount: sent,
                 receivedAmount: received,
                 transactions: transactions.length,
-                ...(periodType === 'today' && { history }),
-                ...(periodType === 'week' && { dailyData }),
-                ...(periodType === 'month' && {
-                    weeklyData: calculateWeeklyData(transactions, branchId)
+                ...(periodType === "today" && { history }),
+                ...(periodType === "week" && { dailyData }),
+                ...(periodType === "month" && {
+                    weeklyData: calculateWeeklyData(transactions)
                 })
             };
         };
 
-        // monthly -> weekly buckets (week 1..5)
         const calculateWeeklyData = (transactions) => {
             const weeks = [
-                { week: "Week 1", amount: 0, earnings: 0 },
-                { week: "Week 2", amount: 0, earnings: 0 },
-                { week: "Week 3", amount: 0, earnings: 0 },
-                { week: "Week 4", amount: 0, earnings: 0 },
-                { week: "Week 5", amount: 0, earnings: 0 }
+                { week: "Week 1", amount: 0 },
+                { week: "Week 2", amount: 0 },
+                { week: "Week 3", amount: 0 },
+                { week: "Week 4", amount: 0 },
+                { week: "Week 5", amount: 0 }
             ];
 
-            transactions.forEach(tx => {
+            transactions.forEach((tx) => {
                 try {
                     const amount = Number(decrypt_number(tx.points));
-                    if (Number.isNaN(amount)) throw new Error("Invalid amount");
+                    if (Number.isNaN(amount)) throw new Error();
 
-                    const txDate = moment(tx.createdAt);
-                    // 1-7 => week 0, 8-14 => week 1, ...
-                    const weekIndex = Math.min(4, Math.max(0, Math.ceil(txDate.date() / 7) - 1));
-                    weeks[weekIndex].amount += amount;
-                    if (tx.status === true) {
-                        weeks[weekIndex].earnings += calcEarning(amount, commission);
-                    }
-                } catch (error) {
-                    console.error("Error processing transaction for monthly weeks:", error);
-                }
+                    const index = Math.min(
+                        4,
+                        Math.ceil(moment(tx.createdAt).date() / 7) - 1
+                    );
+
+                    weeks[index].amount += amount;
+                } catch {}
             });
 
-            // trim trailing empty weeks
-            while (weeks.length > 0 && weeks[weeks.length - 1].amount === 0 && weeks[weeks.length - 1].earnings === 0) {
+            while (
+                weeks.length > 0 &&
+                weeks[weeks.length - 1].amount === 0
+            ) {
                 weeks.pop();
             }
 
             return weeks;
         };
 
-        const todayData = processTransactions(todayTx, 'today');
-        const weeklyData = processTransactions(weekTx, 'week');
-        const monthlyData = processTransactions(monthTx, 'month');
+        const todayData = processTransactions(todayTx, "today");
+        const weeklyData = processTransactions(weekTx, "week");
+        const monthlyData = processTransactions(monthTx, "month");
+
+        // 🟢 Using DB value DIRECTLY
+        const totalEarning = user.total_earning || 0;
 
         return returnCode(res, 200, true, "Dashboard fetched successfully", {
-            today: todayData,
-            week: weeklyData,
-            month: monthlyData
+            today: {
+                ...todayData,
+                totalEarnings: totalEarning
+            },
+            week: {
+                ...weeklyData,
+                totalEarnings: totalEarning
+            },
+            month: {
+                ...monthlyData,
+                totalEarnings: totalEarning
+            }
         });
 
     } catch (error) {
@@ -342,19 +377,22 @@ const getDashboardData = asyncHandler(async (req, res) => {
     }
 });
 
-const saveLogs = asyncHandler(async(req,res)=>{
-    const  {ip_address, device_info} = req.body;
+
+const saveLogs = asyncHandler(async (req, res) => {
+    const { ip_address, device_info } = req.body;
     const username = req.user.username;
 
-    const save_log = await UserAccessLog.create({username , ip_address,device_info})
+    const save_log = await UserAccessLog.create({ username, ip_address, device_info })
 
-    if(!save_log){
-        return returnCode(res,500,false,"something error to save the logs",null)
+    if (!save_log) {
+        return returnCode(res, 500, false, "something error to save the logs", null)
     }
 
-    return returnCode(res,200,true,"Data save successfully",save_log)
+    return returnCode(res, 200, true, "Data save successfully", save_log)
 
 })
+
+
 
 
 

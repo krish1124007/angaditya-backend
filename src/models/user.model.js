@@ -21,6 +21,11 @@ const userSchema = new mongoose.Schema({
     expoToken:{
         type:String,
         required:false
+    },
+    total_earning:{
+        type:Number,
+        required:false,
+        default:0
     }
 
 },{timestamps:true})
