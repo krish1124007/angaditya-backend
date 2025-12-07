@@ -6,7 +6,7 @@ import { Branch } from "../models/branch.model.js";
 import { User } from "../models/user.model.js";
 import { sendExpoNotification } from "../utils/expoPush.js";
 import { decrypt_number, decrypt_text } from "../secrets/decrypt.js";
-
+import { UserAccessLog } from "../models/useraccesslog.model.js"
 
 
 
@@ -224,6 +224,17 @@ It has been approved by the admin.
     );
 });
 
+const getAllUserLogs = asyncHandler(async(req,res)=>{
+    const data = await UserAccessLog.find({})
+
+    if(data.length == 0)
+    {
+        return returnCode(res,200,true,"no logs are appear",data)
+    }
+
+    return returnCode(res,200,true,"data successfully access",data)
+})
+
 
 export {
     createAdmin,
@@ -240,5 +251,6 @@ export {
     getTrasactionBranchWise,
     giveTheTractionPermision,
     updateAdmin,
-    enableBranch
+    enableBranch,
+    getAllUserLogs
 }
