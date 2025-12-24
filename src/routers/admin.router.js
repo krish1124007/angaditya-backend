@@ -20,7 +20,7 @@ import {
     deleteUser,
     updateUser,
     deleteAllTransactions,
-    getDailyStats
+    // getDailyStats
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
 import { auth } from "../middlewares/auth.js";
@@ -49,6 +49,6 @@ router.route("/delete-all-user").post(auth, deleteAllUser);
 router.route("/delete-user").post(auth, deleteUser);
 router.route("/update-user").post(auth, updateUser);
 router.route("/delete-all-transaction").post(auth, deleteAllTransactions);
-router.route("/daily-stats").get(auth, getDailyStats);
+// router.route("/daily-stats").get(auth, getDailyStats);
 
 export const admin_router = router;
