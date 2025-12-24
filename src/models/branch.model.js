@@ -12,13 +12,21 @@ const BranchSchema = new mongoose.Schema({
     type:String,
     required:true
  },
- commision:{
+ opening_balance:{
    type:Number,
-   required:true
+   default:0,
  },
  active:{
    type:Boolean,
    default:true
+ },
+ commision:{
+   type:Number,
+   default:0
+ },
+ today_commision:{
+  type:Number,
+  default:0
  }
  
 

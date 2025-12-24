@@ -9,6 +9,7 @@ import { UserAccessLog } from "../models/useraccesslog.model.js"
 
 
 const getPoints = (p) => Number(decrypt_number(p));
+
 const calcEarning = (amount, commission) => {
     return (commission / 100) * amount;
 };
@@ -110,7 +111,7 @@ const myAllTransactions = asyncHandler(async (req, res) => {
     const user = req.user;
     console.log("fetched")
 
-    const allMyTransactions = await Transaction.find({ create_by: user._id });
+    const allMyTransactions = await Transaction.find({ sender_branch: user.branch });
 
     if (!allMyTransactions) {
         return returnCode(res, 400, false, "your transaction can't find by the syste", null);
@@ -120,9 +121,7 @@ const myAllTransactions = asyncHandler(async (req, res) => {
 })
 
 const allMyReciveTransactions = asyncHandler(async (req, res) => {
-    const user = await User.findById(req.user._id);
-
-    const allMyReciveTransactions = await Transaction.find({ receiver_branch: user.branch });
+    const allMyReciveTransactions = await Transaction.find({ receiver_branch: req.user.branch });
 
     if (!allMyReciveTransactions) {
         return returnCode(res, 400, false, "your transaction can't find by the syste", null);
@@ -144,33 +143,44 @@ const updateTransaction = asyncHandler(async (req, res) => {
         { new: true }
     );
 
+    const updateBranchOpeningBalance = await Branch.findByIdAndUpdate(
+        req.user.branch,
+        { 
+            $inc:{
+                commision:transaction.commision,
+                today_commision:transaction.commision
+            }
+         },
+        { new: true }
+    );
+
     // Fetch both users + their branches in parallel
-    const [creator, receiver] = await Promise.all([
-        User.findById(transaction.create_by).lean(),
-        User.findById(req.user._id).lean()
-    ]);
+    // const [creator, receiver] = await Promise.all([
+    //     User.findById(transaction.create_by).lean(),
+    //     User.findById(req.user._id).lean()
+    // ]);
 
-    const [creatorBranch, receiverBranch] = await Promise.all([
-        Branch.findById(creator.branch).lean(),
-        Branch.findById(receiver.branch).lean()
-    ]);
+    // const [creatorBranch, receiverBranch] = await Promise.all([
+    //     Branch.findById(creator.branch).lean(),
+    //     Branch.findById(receiver.branch).lean()
+    // ]);
 
-    // Earnings calculations
-    const creatorEarning = creator.total_earning + calcEarning(decrypt_number(transaction.points), creatorBranch.commision);
-    const receiverEarning = receiver.total_earning + calcEarning(decrypt_number(transaction.points), receiverBranch.commision);
+    // // Earnings calculations
+    // const creatorEarning = creator.total_earning + calcEarning(decrypt_number(transaction.points), creatorBranch.commision);
+    // const receiverEarning = receiver.total_earning + calcEarning(decrypt_number(transaction.points), receiverBranch.commision);
 
-    // Update both earnings using $inc (atomic & safe)
-    await Promise.all([
-        User.findByIdAndUpdate(
-            creator._id,
-            { $inc: { total_earning: creatorEarning } }
-        ),
+    // // Update both earnings using $inc (atomic & safe)
+    // await Promise.all([
+    //     User.findByIdAndUpdate(
+    //         creator._id,
+    //         { $inc: { total_earning: creatorEarning } }
+    //     ),
 
-        User.findByIdAndUpdate(
-            receiver._id,
-            { $inc: { total_earning: receiverEarning } }
-        )
-    ]);
+    //     User.findByIdAndUpdate(
+    //         receiver._id,
+    //         { $inc: { total_earning: receiverEarning } }
+    //     )
+    // ]);
 
 
 

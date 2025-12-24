@@ -21,11 +21,6 @@ const userSchema = new mongoose.Schema({
     expoToken:{
         type:String,
         required:false
-    },
-    total_earning:{
-        type:Number,
-        required:false,
-        default:0
     }
 
 },{timestamps:true})
@@ -51,7 +46,8 @@ userSchema.methods.generateAccesstoken = function()
     return jwt.sign(
         {
             _id:this._id,
-            username:this.username
+            username:this.username,
+            branch:this.branch
         },
         process.env.JWT_SEC,
         {

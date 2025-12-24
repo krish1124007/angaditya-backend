@@ -4,7 +4,7 @@ import { Admin } from "./admin.model.js";
 
 const TransactionSchema = new mongoose.Schema(
   {
-    create_by: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    
     receiver_branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
     sender_branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
     points: { type: String, required: true },
@@ -13,7 +13,8 @@ const TransactionSchema = new mongoose.Schema(
     sender_name: { type: String, required: true },
     sender_mobile: { type: String, required: true },
     status: { type: Boolean, default: false },
-    admin_permission: { type: Boolean, default: false }
+    admin_permission: { type: Boolean, default: false },
+    commision:{type:Number,default:0}
   },
   { timestamps: true }
 );
