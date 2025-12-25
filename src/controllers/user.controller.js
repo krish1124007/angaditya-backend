@@ -6,7 +6,7 @@ import { Branch } from "../models/branch.model.js";
 import moment from "moment";
 import { decrypt_number } from "../secrets/decrypt.js";
 import { UserAccessLog } from "../models/useraccesslog.model.js"
-
+import { CustomRelationship } from "../models/custom_relationship.js";
 
 const getPoints = (p) => Number(decrypt_number(p));
 
@@ -160,9 +160,7 @@ const allMyReciveTransactions = asyncHandler(async (req, res) => {
 
 const updateTransaction = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    console.log(id)
-
-
+    console.log("code arrvied here")
 
     // Update the transaction status
     const transaction = await Transaction.findByIdAndUpdate(
@@ -171,7 +169,10 @@ const updateTransaction = asyncHandler(async (req, res) => {
         { new: true }
     );
 
+    console.log("transaction is outer : ", transaction)
+
     if (!transaction) {
+        console.log("trsaction is: ", transaction)
         return returnCode(res, 500, false, "trsaction is not complete", null);
     }
 
@@ -180,7 +181,7 @@ const updateTransaction = asyncHandler(async (req, res) => {
         branch2: transaction.receiver_branch
     })
 
-    let c1 = transaction.commision;
+    let c1 = transaction.commission;
     let c2 = 0;
 
     if (relationship) {
@@ -189,16 +190,14 @@ const updateTransaction = asyncHandler(async (req, res) => {
     }
 
 
-    const [updateBranchOpeningBalance, updateReceiverOpeningBalance] = Promise.all([
+    const [updateBranchOpeningBalance, updateReceiverOpeningBalance] = await Promise.all([
         Branch.findByIdAndUpdate(
-            req.user.branch,
+            transaction.sender_branch,
             {
                 $inc: {
-                    commision: c1,
-                    today_commision: c1
-                },
-
-
+                    commission: c1,
+                    today_commission: c1
+                }
             },
             { new: true }
         ),
@@ -207,13 +206,14 @@ const updateTransaction = asyncHandler(async (req, res) => {
             {
                 $inc: {
                     opening_balance: -decrypt_number(transaction.points),
-                    commision: c2,
-                    today_commision: c2
+                    commission: c2,
+                    today_commission: c2
                 }
-            }
+            },
+            { new: true }
         )
+    ]);
 
-    ])
 
 
 

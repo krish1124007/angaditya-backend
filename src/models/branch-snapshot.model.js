@@ -14,11 +14,11 @@ const BranchSnapshotSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
-    total_commision: {
+    total_commission: {
         type: Number,
         default: 0
     },
-    today_commision: {
+    today_commission: {
         type: Number,
         default: 0
     },

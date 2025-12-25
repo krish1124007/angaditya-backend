@@ -313,10 +313,10 @@ const deleteBranch = asyncHandler(async (req, res) => {
 });
 
 const getAllBranches = asyncHandler(async (req, res) => {
-    const { date } = req.body; // Expected format: dd/mm/yy
+    // Expected format: dd/mm/yy
 
     // If date is provided, fetch snapshot data for that day
-    if (date) {
+    if (req?.body?.date) {
         try {
             // Parse date in dd/mm/yy format
             const parts = date.split('/');
@@ -346,8 +346,8 @@ const getAllBranches = asyncHandler(async (req, res) => {
                 branch_name: snapshot.branch_name,
                 location: snapshot.branch_id?.location || "N/A",
                 opening_balance: snapshot.opening_balance,
-                commision: snapshot.total_commision,
-                today_commision: snapshot.today_commision,
+                commission: snapshot.total_commission,
+                today_commission: snapshot.today_commission,
                 active: snapshot.branch_id?.active || true,
                 snapshot_date: snapshot.snapshot_date,
                 is_snapshot: true // Flag to indicate this is historical data
@@ -441,7 +441,7 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
             $project: {
                 // Original fields
                 _id: 1,
-                commision: 1,
+                commission: 1,
                 receiver_branch: 1,
                 sender_branch: 1,
                 points: 1,
@@ -706,17 +706,17 @@ const getLatestSnapshots = asyncHandler(async (req, res) => {
 
 
 const createRelationShip = asyncHandler(async (req, res) => {
-    const { branch1, branch2, commision1, commision2 } = req.body;
+    const { branch1, branch2, commission1, commission2 } = req.body;
 
-    if (!branch1 || !branch2 || !commision1 || !commision2) {
+    if (!branch1 || !branch2 || !commission1 || !commission2) {
         return returnCode(res, 400, false, "All fields are required");
     }
 
     const relationship = await CustomRelationship.create({
         branch1,
         branch2,
-        commision1,
-        commision2
+        commission1,
+        commission2
     })
 
     return returnCode(res, 200, true, "Relationship created successfully", relationship);
@@ -748,9 +748,9 @@ export {
     deleteUser,
     updateUser,
     deleteAllTransactions,
-    createRelationShip,
     triggerBranchSnapshot,
     getBranchSnapshots,
-    getLatestSnapshots
+    getLatestSnapshots,
+    createRelationShip
     // getDailyStats
 };

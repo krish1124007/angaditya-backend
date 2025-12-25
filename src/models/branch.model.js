@@ -20,11 +20,11 @@ const BranchSchema = new mongoose.Schema({
    type:Boolean,
    default:true
  },
- commision:{
+ commission:{
    type:Number,
    default:0
  },
- today_commision:{
+ today_commission:{
   type:Number,
   default:0
  }

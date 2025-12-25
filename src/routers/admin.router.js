@@ -22,7 +22,8 @@ import {
     deleteAllTransactions,
     triggerBranchSnapshot,
     getBranchSnapshots,
-    getLatestSnapshots
+    getLatestSnapshots,
+    createRelationShip
     // getDailyStats
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
@@ -57,7 +58,7 @@ router.route("/delete-all-transaction").post(auth, deleteAllTransactions);
 router.route("/trigger-snapshot").post(auth, triggerBranchSnapshot);
 router.route("/get-snapshots").post(auth, getBranchSnapshots);
 router.route("/get-latest-snapshots").get(auth, getLatestSnapshots);
-
+router.route("/create-relationship").post(auth, createRelationShip);
 // router.route("/daily-stats").get(auth, getDailyStats);
 
 export const admin_router = router;

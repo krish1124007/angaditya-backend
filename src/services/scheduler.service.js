@@ -5,7 +5,7 @@ import { BranchSnapshot } from "../models/branch-snapshot.model.js";
 /**
  * Creates daily snapshots of all branches
  * Saves branch name, opening balance, total commission, and today's commission
- * Resets today_commision to 0 for the new day
+ * Resets today_commission to 0 for the new day
  */
 const createDailyBranchSnapshots = async () => {
     try {
@@ -30,15 +30,15 @@ const createDailyBranchSnapshots = async () => {
                     branch_id: branch._id,
                     branch_name: branch.branch_name,
                     opening_balance: branch.opening_balance || 0,
-                    total_commision: branch.commision || 0,
-                    today_commision: branch.today_commision || 0,
+                    total_commission: branch.commission || 0,
+                    today_commission: branch.today_commission || 0,
                     snapshot_date: snapshotDate
                 });
 
                 // Reset today's commission for the new day
                 await Branch.findByIdAndUpdate(
                     branch._id,
-                    { today_commision: 0 }
+                    { today_commission: 0 }
                 );
 
                 console.log(`Snapshot created for branch: ${branch.branch_name}`);
