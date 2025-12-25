@@ -109,16 +109,16 @@ const createTransaction = asyncHandler(async (req, res) => {
 
 const myAllTransactions = asyncHandler(async (req, res) => {
     const user = req.user;
-    const { date } = req.body; // Expected format: dd/mm/yy
+     // Expected format: dd/mm/yy
     console.log("fetched")
 
     let query = { sender_branch: user.branch };
 
     // If date is provided, filter transactions for that specific day
-    if (date) {
+    if (req?.body?.date) {
         try {
             // Parse date in dd/mm/yy format
-            const parts = date.split('/');
+            const parts = req.body.date.split('/');
             if (parts.length !== 3) {
                 return returnCode(res, 400, false, "Invalid date format. Use dd/mm/yy", null);
             }
