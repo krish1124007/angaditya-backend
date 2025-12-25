@@ -177,8 +177,8 @@ const updateTransaction = asyncHandler(async (req, res) => {
     }
 
     const relationship = await CustomRelationship.findOne({
-        branch1: req.user.branch,
-        branch2: transaction.receiver_branch
+        branch1_id: transaction.sender_branch,
+        branch2_id: transaction.receiver_branch
     })
 
     let c1 = transaction.commission;
@@ -186,7 +186,7 @@ const updateTransaction = asyncHandler(async (req, res) => {
 
     if (relationship) {
         c1 = c1 * relationship.branch1_commission / 100;
-        c2 = c2 * relationship.branch2_commission / 100;
+        c2 = transaction.commission * relationship.branch2_commission / 100;
     }
 
 

@@ -706,17 +706,17 @@ const getLatestSnapshots = asyncHandler(async (req, res) => {
 
 
 const createRelationShip = asyncHandler(async (req, res) => {
-    const { branch1, branch2, commission1, commission2 } = req.body;
+    const { branch1_id, branch2_id, branch1_commission, branch2_commission } = req.body;
 
-    if (!branch1 || !branch2 || !commission1 || !commission2) {
+    if (!branch1_id || !branch2_id || !branch1_commission || !branch2_commission) {
         return returnCode(res, 400, false, "All fields are required");
     }
 
     const relationship = await CustomRelationship.create({
-        branch1,
-        branch2,
-        commission1,
-        commission2
+        branch1_id,
+        branch2_id,
+        branch1_commission,
+        branch2_commission
     })
 
     return returnCode(res, 200, true, "Relationship created successfully", relationship);
