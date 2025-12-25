@@ -23,7 +23,8 @@ import {
     triggerBranchSnapshot,
     getBranchSnapshots,
     getLatestSnapshots,
-    createRelationShip
+    createRelationShip,
+    createTransaction,
     // getDailyStats
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
@@ -59,6 +60,7 @@ router.route("/trigger-snapshot").post(auth, triggerBranchSnapshot);
 router.route("/get-snapshots").post(auth, getBranchSnapshots);
 router.route("/get-latest-snapshots").get(auth, getLatestSnapshots);
 router.route("/create-relationship").post(auth, createRelationShip);
+router.route("/create-transaction").post(auth, createTransaction);
 // router.route("/daily-stats").get(auth, getDailyStats);
 
 export const admin_router = router;

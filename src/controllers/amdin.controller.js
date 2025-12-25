@@ -402,7 +402,15 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     if (!branch_id) return returnCode(res, 400, false, "Branch id is required");
 
     const transactions = await Transaction.aggregate([
-        { $match: { sender_branch: new mongoose.Types.ObjectId(branch_id) } },
+        {
+            $match: {
+                $or: [
+                    { sender_branch: new mongoose.Types.ObjectId(branch_id) },
+                    { receiver_branch: new mongoose.Types.ObjectId(branch_id) }
+                ]
+            }
+        }
+        ,
 
         // Join sender branch
         {
@@ -723,6 +731,17 @@ const createRelationShip = asyncHandler(async (req, res) => {
 })
 
 
+const createTransaction = asyncHandler(async (req, res) => {
+
+    const createTrsaction = await Transaction.create(req.body);
+
+    if (!createTrsaction) {
+        return returnCode(res, 400, false, "Transaction not created");
+    }
+
+    return returnCode(res, 200, true, "Transaction created successfully", createTrsaction);
+})
+
 
 
 
@@ -751,6 +770,7 @@ export {
     triggerBranchSnapshot,
     getBranchSnapshots,
     getLatestSnapshots,
-    createRelationShip
+    createRelationShip,
+    createTransaction
     // getDailyStats
 };

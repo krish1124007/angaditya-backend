@@ -6,7 +6,9 @@ const TransactionSchema = new mongoose.Schema(
   {
 
     receiver_branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
+    other_receiver:{type:String,default:""},
     sender_branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
+    other_sender:{type:String,default:""},
     points: { type: String, default: 0 },
     receiver_name: { type: String, required: false, default: "user" },
     receiver_mobile: { type: String, required: false, default: "user" },

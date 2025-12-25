@@ -97,7 +97,7 @@ const createTransaction = asyncHandler(async (req, res) => {
 
     const user_branch = await User.findById(user._id);
 
-    const create = await Transaction.create({ ...req.body, sender_branch: user_branch.branch, create_by: user._id });
+    const create = await Transaction.create({ ...req.body, sender_branch: user_branch.branch });
 
     if (!create) {
         return returnCode(res, 500, false, "somthing problem to create transaction", null);
@@ -288,6 +288,16 @@ const saveLogs = asyncHandler(async (req, res) => {
 
 })
 
+const openingBalance = asyncHandler(async(req,res)=>{
+    const {new_balance} = req.body;
+    const user = req.user;
+
+    const updateBranch = await Branch.findByIdAndUpdate(user.branch,{
+        
+            opening_balance:new_balance
+        
+    })
+})
 
 export {
     createUser,
