@@ -109,9 +109,37 @@ const createTransaction = asyncHandler(async (req, res) => {
 
 const myAllTransactions = asyncHandler(async (req, res) => {
     const user = req.user;
+    const { date } = req.body; // Expected format: dd/mm/yy
     console.log("fetched")
 
-    const allMyTransactions = await Transaction.find({ sender_branch: user.branch });
+    let query = { sender_branch: user.branch };
+
+    // If date is provided, filter transactions for that specific day
+    if (date) {
+        try {
+            // Parse date in dd/mm/yy format
+            const parts = date.split('/');
+            if (parts.length !== 3) {
+                return returnCode(res, 400, false, "Invalid date format. Use dd/mm/yy", null);
+            }
+
+            const day = parseInt(parts[0]);
+            const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+            const year = parseInt(parts[2]) + 2000; // Assuming 20xx
+
+            const startDate = new Date(year, month, day, 0, 0, 0, 0);
+            const endDate = new Date(year, month, day, 23, 59, 59, 999);
+
+            query.createdAt = {
+                $gte: startDate,
+                $lte: endDate
+            };
+        } catch (error) {
+            return returnCode(res, 400, false, "Error parsing date", null);
+        }
+    }
+
+    const allMyTransactions = await Transaction.find(query);
 
     if (!allMyTransactions) {
         return returnCode(res, 400, false, "your transaction can't find by the syste", null);
@@ -143,54 +171,57 @@ const updateTransaction = asyncHandler(async (req, res) => {
         { new: true }
     );
 
-    const updateBranchOpeningBalance = await Branch.findByIdAndUpdate(
-        req.user.branch,
-        { 
-            $inc:{
-                commision:transaction.commision,
-                today_commision:transaction.commision
-            }
-         },
-        { new: true }
-    );
-
-    // Fetch both users + their branches in parallel
-    // const [creator, receiver] = await Promise.all([
-    //     User.findById(transaction.create_by).lean(),
-    //     User.findById(req.user._id).lean()
-    // ]);
-
-    // const [creatorBranch, receiverBranch] = await Promise.all([
-    //     Branch.findById(creator.branch).lean(),
-    //     Branch.findById(receiver.branch).lean()
-    // ]);
-
-    // // Earnings calculations
-    // const creatorEarning = creator.total_earning + calcEarning(decrypt_number(transaction.points), creatorBranch.commision);
-    // const receiverEarning = receiver.total_earning + calcEarning(decrypt_number(transaction.points), receiverBranch.commision);
-
-    // // Update both earnings using $inc (atomic & safe)
-    // await Promise.all([
-    //     User.findByIdAndUpdate(
-    //         creator._id,
-    //         { $inc: { total_earning: creatorEarning } }
-    //     ),
-
-    //     User.findByIdAndUpdate(
-    //         receiver._id,
-    //         { $inc: { total_earning: receiverEarning } }
-    //     )
-    // ]);
-
-
-
-
     if (!transaction) {
-        return returnCode(res, 400, false, "your transaction can't find by the syste", null);
+        return returnCode(res, 500, false, "trsaction is not complete", null);
     }
+
+    const relationship = await CustomRelationship.findOne({
+        branch1: req.user.branch,
+        branch2: transaction.receiver_branch
+    })
+
+    let c1 = transaction.commision;
+    let c2 = 0;
+
+    if (relationship) {
+        c1 = c1 * relationship.branch1_commission / 100;
+        c2 = c2 * relationship.branch2_commission / 100;
+    }
+
+
+    const [updateBranchOpeningBalance, updateReceiverOpeningBalance] = Promise.all([
+        Branch.findByIdAndUpdate(
+            req.user.branch,
+            {
+                $inc: {
+                    commision: c1,
+                    today_commision: c1
+                },
+
+
+            },
+            { new: true }
+        ),
+        Branch.findByIdAndUpdate(
+            transaction.receiver_branch,
+            {
+                $inc: {
+                    opening_balance: -decrypt_number(transaction.points),
+                    commision: c2,
+                    today_commision: c2
+                }
+            }
+        )
+
+    ])
+
+
+
 
     return returnCode(res, 200, true, "update transaction successfully", transaction);
 })
+
+
 
 const deleteTransaction = asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -231,160 +262,15 @@ const updateTheUser = asyncHandler(async (req, res) => {
 
 
 const getDashboardData = asyncHandler(async (req, res) => {
-    try {
+    const user = req.user;
 
-        const userId = req.user._id;
-        if (!userId) {
-            return returnCode(res, 400, false, "User ID is required");
-        }
+    const branchDetails = await Branch.findById(user.branch);
 
-        const user = await User.findById(userId);
-        if (!user) {
-            return returnCode(res, 404, false, "User not found");
-        }
-
-        if (!user.branch) {
-            return returnCode(res, 400, false, "User has no branch assigned");
-        }
-
-        const [todayTx, weekTx, monthTx, branch] = await Promise.all([
-            Transaction.find({
-                create_by: userId,
-                createdAt: { $gte: moment().startOf("day").toDate() }
-            }),
-            Transaction.find({
-                create_by: userId,
-                createdAt: { $gte: moment().startOf("week").toDate() }
-            }),
-            Transaction.find({
-                create_by: userId,
-                createdAt: { $gte: moment().startOf("month").toDate() }
-            }),
-            Branch.findById(user.branch)
-        ]);
-
-        if (!branch) {
-            return returnCode(res, 404, false, "Branch not found");
-        }
-
-        const branchId = user.branch;
-
-        // Helper
-        const processTransactions = (transactions, periodType = "today") => {
-            let sent = 0;
-            let received = 0;
-            const history = [];
-
-            const dailyData = periodType === "week"
-                ? Array.from({ length: 7 }).map((_, i) => ({
-                    day: moment().day(i).format("ddd"),
-                    amount: 0
-                }))
-                : null;
-
-            transactions.forEach((tx) => {
-                let amount;
-                try {
-                    amount = Number(decrypt_number(tx.points));
-                    if (Number.isNaN(amount)) throw new Error();
-                } catch {
-                    return;
-                }
-
-                if (tx.sender_branch?.toString() === branchId.toString()) {
-                    sent += amount;
-                } else if (tx.receiver_branch?.toString() === branchId.toString()) {
-                    received += amount;
-                }
-
-                if (periodType === "today") {
-                    history.push({
-                        time: moment(tx.createdAt).format("hh:mm A"),
-                        amount,
-                        type: tx.receiver_branch?.toString() === branchId.toString()
-                            ? "received"
-                            : "sent",
-                        status: tx.status
-                    });
-                }
-
-                if (periodType === "week" && dailyData) {
-                    const dayIndex = moment(tx.createdAt).day();
-                    dailyData[dayIndex].amount += amount;
-                }
-            });
-
-            return {
-                sentAmount: sent,
-                receivedAmount: received,
-                transactions: transactions.length,
-                ...(periodType === "today" && { history }),
-                ...(periodType === "week" && { dailyData }),
-                ...(periodType === "month" && {
-                    weeklyData: calculateWeeklyData(transactions)
-                })
-            };
-        };
-
-        const calculateWeeklyData = (transactions) => {
-            const weeks = [
-                { week: "Week 1", amount: 0 },
-                { week: "Week 2", amount: 0 },
-                { week: "Week 3", amount: 0 },
-                { week: "Week 4", amount: 0 },
-                { week: "Week 5", amount: 0 }
-            ];
-
-            transactions.forEach((tx) => {
-                try {
-                    const amount = Number(decrypt_number(tx.points));
-                    if (Number.isNaN(amount)) throw new Error();
-
-                    const index = Math.min(
-                        4,
-                        Math.ceil(moment(tx.createdAt).date() / 7) - 1
-                    );
-
-                    weeks[index].amount += amount;
-                } catch {}
-            });
-
-            while (
-                weeks.length > 0 &&
-                weeks[weeks.length - 1].amount === 0
-            ) {
-                weeks.pop();
-            }
-
-            return weeks;
-        };
-
-        const todayData = processTransactions(todayTx, "today");
-        const weeklyData = processTransactions(weekTx, "week");
-        const monthlyData = processTransactions(monthTx, "month");
-
-        // 🟢 Using DB value DIRECTLY
-        const totalEarning = user.total_earning || 0;
-
-        return returnCode(res, 200, true, "Dashboard fetched successfully", {
-            today: {
-                ...todayData,
-                totalEarnings: totalEarning
-            },
-            week: {
-                ...weeklyData,
-                totalEarnings: totalEarning
-            },
-            month: {
-                ...monthlyData,
-                totalEarnings: totalEarning
-            }
-        });
-
-    } catch (error) {
-        console.error("Dashboard error:", error);
-        return returnCode(res, 500, false, "Internal server error");
+    if (!branchDetails) {
+        return returnCode(res, 400, false, "your branch can't find by the syste", null);
     }
+
+    return returnCode(res, 200, true, "Branch details successfully", branchDetails);
 });
 
 
@@ -401,11 +287,6 @@ const saveLogs = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "Data save successfully", save_log)
 
 })
-
-
-
-
-
 
 
 export {

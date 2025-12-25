@@ -8,6 +8,10 @@ import { User } from "../models/user.model.js";
 import { sendExpoNotification } from "../utils/expoPush.js";
 import { decrypt_number, decrypt_text } from "../secrets/decrypt.js";
 import { UserAccessLog } from "../models/useraccesslog.model.js";
+import { CustomRelationship } from "../models/custom_relationship.js";
+import { BranchSnapshot } from "../models/branch-snapshot.model.js";
+import { manualCreateSnapshots } from "../services/scheduler.service.js";
+
 
 /* ---------------------- AGGREGATION ---------------------- */
 
@@ -309,6 +313,54 @@ const deleteBranch = asyncHandler(async (req, res) => {
 });
 
 const getAllBranches = asyncHandler(async (req, res) => {
+    const { date } = req.body; // Expected format: dd/mm/yy
+
+    // If date is provided, fetch snapshot data for that day
+    if (date) {
+        try {
+            // Parse date in dd/mm/yy format
+            const parts = date.split('/');
+            if (parts.length !== 3) {
+                return returnCode(res, 400, false, "Invalid date format. Use dd/mm/yy", null);
+            }
+
+            const day = parseInt(parts[0]);
+            const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+            const year = parseInt(parts[2]) + 2000; // Assuming 20xx
+
+            // Set to midnight of that day
+            const snapshotDate = new Date(year, month, day, 0, 0, 0, 0);
+
+            // Fetch snapshots for that specific date
+            const snapshots = await BranchSnapshot.find({
+                snapshot_date: snapshotDate
+            }).populate('branch_id', 'branch_name location active');
+
+            if (!snapshots || snapshots.length === 0) {
+                return returnCode(res, 404, false, `No snapshot data found for ${date}`, null);
+            }
+
+            // Format response to match branch structure
+            const formattedData = snapshots.map(snapshot => ({
+                _id: snapshot.branch_id?._id || snapshot.branch_id,
+                branch_name: snapshot.branch_name,
+                location: snapshot.branch_id?.location || "N/A",
+                opening_balance: snapshot.opening_balance,
+                commision: snapshot.total_commision,
+                today_commision: snapshot.today_commision,
+                active: snapshot.branch_id?.active || true,
+                snapshot_date: snapshot.snapshot_date,
+                is_snapshot: true // Flag to indicate this is historical data
+            }));
+
+            return returnCode(res, 200, true, `Branch snapshots for ${date} fetched successfully`, formattedData);
+        } catch (error) {
+            console.error("Error fetching branch snapshots:", error);
+            return returnCode(res, 400, false, "Error parsing date or fetching snapshots", null);
+        }
+    }
+
+    // If no date provided, return current branch data
     const branches = await Branch.find();
     return returnCode(res, 200, true, "Branches fetched successfully", branches);
 });
@@ -389,7 +441,7 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
             $project: {
                 // Original fields
                 _id: 1,
-                commision:1,
+                commision: 1,
                 receiver_branch: 1,
                 sender_branch: 1,
                 points: 1,
@@ -586,6 +638,91 @@ const updateUser = asyncHandler(async (req, res) => {
 });
 
 
+/* ---------------------- BRANCH SNAPSHOT OPERATIONS ---------------------- */
+
+const triggerBranchSnapshot = asyncHandler(async (req, res) => {
+    console.log("Manual branch snapshot triggered by admin");
+    await manualCreateSnapshots();
+    return returnCode(res, 200, true, "Branch snapshots created successfully");
+});
+
+const getBranchSnapshots = asyncHandler(async (req, res) => {
+    const { branch_id, start_date, end_date, limit } = req.body;
+
+    const query = {};
+
+    if (branch_id) {
+        query.branch_id = new mongoose.Types.ObjectId(branch_id);
+    }
+
+    if (start_date || end_date) {
+        query.snapshot_date = {};
+        if (start_date) {
+            query.snapshot_date.$gte = new Date(start_date);
+        }
+        if (end_date) {
+            query.snapshot_date.$lte = new Date(end_date);
+        }
+    }
+
+    const snapshots = await BranchSnapshot.find(query)
+        .sort({ snapshot_date: -1 })
+        .limit(limit || 100)
+        .populate('branch_id', 'branch_name location');
+
+    return returnCode(res, 200, true, "Snapshots fetched successfully", snapshots);
+});
+
+const getLatestSnapshots = asyncHandler(async (req, res) => {
+    // Get the most recent snapshot for each branch
+    const snapshots = await BranchSnapshot.aggregate([
+        {
+            $sort: { snapshot_date: -1 }
+        },
+        {
+            $group: {
+                _id: "$branch_id",
+                latestSnapshot: { $first: "$$ROOT" }
+            }
+        },
+        {
+            $replaceRoot: { newRoot: "$latestSnapshot" }
+        },
+        {
+            $lookup: {
+                from: "branches",
+                localField: "branch_id",
+                foreignField: "_id",
+                as: "branchInfo"
+            }
+        },
+        {
+            $unwind: { path: "$branchInfo", preserveNullAndEmptyArrays: true }
+        }
+    ]);
+
+    return returnCode(res, 200, true, "Latest snapshots fetched successfully", snapshots);
+});
+
+
+const createRelationShip = asyncHandler(async (req, res) => {
+    const { branch1, branch2, commision1, commision2 } = req.body;
+
+    if (!branch1 || !branch2 || !commision1 || !commision2) {
+        return returnCode(res, 400, false, "All fields are required");
+    }
+
+    const relationship = await CustomRelationship.create({
+        branch1,
+        branch2,
+        commision1,
+        commision2
+    })
+
+    return returnCode(res, 200, true, "Relationship created successfully", relationship);
+})
+
+
 
 
 
@@ -611,5 +748,9 @@ export {
     deleteUser,
     updateUser,
     deleteAllTransactions,
+    createRelationShip,
+    triggerBranchSnapshot,
+    getBranchSnapshots,
+    getLatestSnapshots
     // getDailyStats
 };

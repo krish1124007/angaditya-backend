@@ -7,11 +7,11 @@ const TransactionSchema = new mongoose.Schema(
     
     receiver_branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
     sender_branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
-    points: { type: String, required: true },
-    receiver_name: { type: String, required: true },
-    receiver_mobile: { type: String, required: true },
-    sender_name: { type: String, required: true },
-    sender_mobile: { type: String, required: true },
+    points: { type: String, default:0 },
+    receiver_name: { type: String, required: false , default:"user" },
+    receiver_mobile: { type: String, required: false , default:"user" },
+    sender_name: { type: String, required: false , default:"user" },
+    sender_mobile: { type: String, required: false , default:"user" },
     status: { type: Boolean, default: false },
     admin_permission: { type: Boolean, default: false },
     commision:{type:Number,default:0}

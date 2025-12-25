@@ -20,6 +20,9 @@ import {
     deleteUser,
     updateUser,
     deleteAllTransactions,
+    triggerBranchSnapshot,
+    getBranchSnapshots,
+    getLatestSnapshots
     // getDailyStats
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
@@ -49,6 +52,12 @@ router.route("/delete-all-user").post(auth, deleteAllUser);
 router.route("/delete-user").post(auth, deleteUser);
 router.route("/update-user").post(auth, updateUser);
 router.route("/delete-all-transaction").post(auth, deleteAllTransactions);
+
+// Branch Snapshot Routes
+router.route("/trigger-snapshot").post(auth, triggerBranchSnapshot);
+router.route("/get-snapshots").post(auth, getBranchSnapshots);
+router.route("/get-latest-snapshots").get(auth, getLatestSnapshots);
+
 // router.route("/daily-stats").get(auth, getDailyStats);
 
 export const admin_router = router;
