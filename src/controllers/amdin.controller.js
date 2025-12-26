@@ -745,6 +745,270 @@ const createTransaction = asyncHandler(async (req, res) => {
 
 
 
+/* ---------------------- DATE RANGE REPORT ---------------------- */
+
+/**
+ * Generate comprehensive report between two dates
+ * @param {Date} start_date - Start date (format: dd/mm/yy or ISO string)
+ * @param {Date} end_date - End date (format: dd/mm/yy or ISO string)
+ * @returns {Object} - Complete report with transactions, balances, and statistics
+ */
+const getDateRangeReport = asyncHandler(async (req, res) => {
+    const { start_date, end_date } = req.body;
+
+    if (!start_date || !end_date) {
+        return returnCode(res, 400, false, "Both start_date and end_date are required");
+    }
+
+    try {
+        // Parse dates - support both dd/mm/yy and ISO formats
+        let startDateTime, endDateTime;
+
+        // Try to parse as dd/mm/yy format first
+        if (start_date.includes('/')) {
+            const startParts = start_date.split('/');
+            if (startParts.length !== 3) {
+                return returnCode(res, 400, false, "Invalid start_date format. Use dd/mm/yy or ISO format");
+            }
+            const startDay = parseInt(startParts[0]);
+            const startMonth = parseInt(startParts[1]) - 1;
+            const startYear = parseInt(startParts[2]) + 2000;
+            startDateTime = new Date(startYear, startMonth, startDay, 0, 0, 0, 0);
+        } else {
+            startDateTime = new Date(start_date);
+            startDateTime.setHours(0, 0, 0, 0);
+        }
+
+        if (end_date.includes('/')) {
+            const endParts = end_date.split('/');
+            if (endParts.length !== 3) {
+                return returnCode(res, 400, false, "Invalid end_date format. Use dd/mm/yy or ISO format");
+            }
+            const endDay = parseInt(endParts[0]);
+            const endMonth = parseInt(endParts[1]) - 1;
+            const endYear = parseInt(endParts[2]) + 2000;
+            endDateTime = new Date(endYear, endMonth, endDay, 23, 59, 59, 999);
+        } else {
+            endDateTime = new Date(end_date);
+            endDateTime.setHours(23, 59, 59, 999);
+        }
+
+        // Validate dates
+        if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
+            return returnCode(res, 400, false, "Invalid date format");
+        }
+
+        if (startDateTime > endDateTime) {
+            return returnCode(res, 400, false, "Start date must be before or equal to end date");
+        }
+
+        /* ========== 1. GET ALL TRANSACTIONS BETWEEN DATES ========== */
+        const transactions = await Transaction.aggregate([
+            {
+                $match: {
+                    createdAt: {
+                        $gte: startDateTime,
+                        $lte: endDateTime
+                    }
+                }
+            },
+            // Join sender branch
+            {
+                $lookup: {
+                    from: "branches",
+                    localField: "sender_branch",
+                    foreignField: "_id",
+                    as: "senderBranch",
+                },
+            },
+            { $unwind: { path: "$senderBranch", preserveNullAndEmptyArrays: true } },
+
+            // Join receiver branch
+            {
+                $lookup: {
+                    from: "branches",
+                    localField: "receiver_branch",
+                    foreignField: "_id",
+                    as: "receiverBranch",
+                },
+            },
+            { $unwind: { path: "$receiverBranch", preserveNullAndEmptyArrays: true } },
+
+            // Join user who created the transaction
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "create_by",
+                    foreignField: "_id",
+                    as: "creator",
+                },
+            },
+            { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+
+            {
+                $project: {
+                    _id: 1,
+                    create_by: 1,
+                    receiver_branch: 1,
+                    sender_branch: 1,
+                    points: 1,
+                    receiver_name: 1,
+                    receiver_mobile: 1,
+                    sender_name: 1,
+                    sender_mobile: 1,
+                    status: 1,
+                    admin_permission: 1,
+                    commission: 1,
+                    createdAt: 1,
+                    updatedAt: 1,
+                    receiver_branch_name: "$receiverBranch.branch_name",
+                    sender_branch_name: "$senderBranch.branch_name",
+                    created_by_name: {
+                        $cond: {
+                            if: { $and: ["$creator", "$creator.username"] },
+                            then: "$creator.username",
+                            else: null
+                        }
+                    }
+                },
+            },
+            { $sort: { createdAt: -1 } }
+        ]);
+
+        /* ========== 2. GET BRANCH SNAPSHOTS BETWEEN DATES ========== */
+        const branchSnapshots = await BranchSnapshot.find({
+            snapshot_date: {
+                $gte: startDateTime,
+                $lte: endDateTime
+            }
+        })
+            .populate('branch_id', 'branch_name location active')
+            .sort({ snapshot_date: -1 });
+
+        /* ========== 3. GET CURRENT BRANCH BALANCES ========== */
+        const currentBranches = await Branch.find({});
+
+        /* ========== 4. CALCULATE STATISTICS ========== */
+
+        // Transaction statistics
+        const totalTransactions = transactions.length;
+        const approvedTransactions = transactions.filter(t => t.admin_permission === true).length;
+        const pendingTransactions = transactions.filter(t => t.admin_permission === false).length;
+        const completedTransactions = transactions.filter(t => t.status === true).length;
+
+        // Commission statistics
+        const totalCommission = transactions.reduce((sum, t) => sum + (t.commission || 0), 0);
+
+        // Points statistics (encrypted, so we'll just count)
+        const transactionsByBranch = {};
+
+        transactions.forEach(t => {
+            // Sender branch stats
+            const senderName = t.sender_branch_name || 'Unknown';
+            if (!transactionsByBranch[senderName]) {
+                transactionsByBranch[senderName] = {
+                    branch_name: senderName,
+                    sent_count: 0,
+                    received_count: 0,
+                    total_commission: 0
+                };
+            }
+            transactionsByBranch[senderName].sent_count += 1;
+            transactionsByBranch[senderName].total_commission += (t.commission || 0);
+
+            // Receiver branch stats
+            const receiverName = t.receiver_branch_name || 'Unknown';
+            if (!transactionsByBranch[receiverName]) {
+                transactionsByBranch[receiverName] = {
+                    branch_name: receiverName,
+                    sent_count: 0,
+                    received_count: 0,
+                    total_commission: 0
+                };
+            }
+            transactionsByBranch[receiverName].received_count += 1;
+        });
+
+        // Convert to array
+        const branchStatistics = Object.values(transactionsByBranch);
+
+        /* ========== 5. ORGANIZE SNAPSHOTS BY BRANCH ========== */
+        const snapshotsByBranch = {};
+        branchSnapshots.forEach(snapshot => {
+            const branchName = snapshot.branch_name;
+            if (!snapshotsByBranch[branchName]) {
+                snapshotsByBranch[branchName] = [];
+            }
+            snapshotsByBranch[branchName].push({
+                date: snapshot.snapshot_date,
+                opening_balance: snapshot.opening_balance,
+                total_commission: snapshot.total_commission,
+                today_commission: snapshot.today_commission
+            });
+        });
+
+        /* ========== 6. PREPARE FINAL REPORT ========== */
+        const report = {
+            date_range: {
+                start_date: startDateTime,
+                end_date: endDateTime,
+                days_covered: Math.ceil((endDateTime - startDateTime) / (1000 * 60 * 60 * 24)) + 1
+            },
+
+            transactions: {
+                total_count: totalTransactions,
+                approved_count: approvedTransactions,
+                pending_count: pendingTransactions,
+                completed_count: completedTransactions,
+                data: transactions
+            },
+
+            branch_snapshots: {
+                total_snapshots: branchSnapshots.length,
+                snapshots_by_branch: snapshotsByBranch,
+                all_snapshots: branchSnapshots
+            },
+
+            current_branch_balances: currentBranches.map(branch => ({
+                _id: branch._id,
+                branch_name: branch.branch_name,
+                location: branch.location,
+                opening_balance: branch.opening_balance,
+                commission: branch.commission,
+                today_commission: branch.today_commission,
+                active: branch.active
+            })),
+
+            statistics: {
+                total_commission: totalCommission,
+                branch_statistics: branchStatistics,
+                transactions_per_day: (totalTransactions / Math.max(1, Math.ceil((endDateTime - startDateTime) / (1000 * 60 * 60 * 24)))).toFixed(2)
+            },
+
+            summary: {
+                message: `Report generated for ${Math.ceil((endDateTime - startDateTime) / (1000 * 60 * 60 * 24)) + 1} days`,
+                total_transactions: totalTransactions,
+                total_branches_with_activity: branchStatistics.length,
+                total_snapshots: branchSnapshots.length,
+                total_commission: totalCommission
+            }
+        };
+
+        return returnCode(
+            res,
+            200,
+            true,
+            `Report generated successfully from ${start_date} to ${end_date}`,
+            report
+        );
+
+    } catch (error) {
+        console.error("Error generating date range report:", error);
+        return returnCode(res, 500, false, "Error generating report: " + error.message);
+    }
+});
+
+
 export {
     createAdmin,
     loginAdmin,
@@ -771,6 +1035,6 @@ export {
     getBranchSnapshots,
     getLatestSnapshots,
     createRelationShip,
-    createTransaction
-    // getDailyStats
+    createTransaction,
+    getDateRangeReport
 };
