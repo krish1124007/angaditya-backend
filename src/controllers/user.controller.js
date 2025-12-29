@@ -195,6 +195,7 @@ const updateTransaction = asyncHandler(async (req, res) => {
             transaction.sender_branch,
             {
                 $inc: {
+                    opening_balance:decrypt_number(transaction.points),
                     commission: c1,
                     today_commission: c1
                 }
