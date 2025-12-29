@@ -16,7 +16,9 @@ const TransactionSchema = new mongoose.Schema(
     sender_mobile: { type: String, required: false, default: "user" },
     status: { type: Boolean, default: false },
     admin_permission: { type: Boolean, default: false },
-    commission: { type: Number, default: 0 }
+    commission: { type: Number, default: 0 },
+    receiver_commision:{type:Number, default:0},
+    sender_commision:{type:Number, default:0}
   },
   { timestamps: true }
 );

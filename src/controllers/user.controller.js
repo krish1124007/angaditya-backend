@@ -189,6 +189,9 @@ const updateTransaction = asyncHandler(async (req, res) => {
         c2 = transaction.commission * relationship.branch2_commission / 100;
     }
 
+    transaction.sender_commision = c1;
+    transaction.receiver_commision = c2;
+    transaction.save();
 
     const [updateBranchOpeningBalance, updateReceiverOpeningBalance] = await Promise.all([
         Branch.findByIdAndUpdate(
