@@ -462,6 +462,8 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
                 admin_permission: 1,
                 createdAt: 1,
                 updatedAt: 1,
+                sender_commision: 1,
+                receiver_commision: 1,
                 __v: 1,
 
                 // Additional calculated fields
