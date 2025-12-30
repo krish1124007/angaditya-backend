@@ -109,7 +109,7 @@ const createTransaction = asyncHandler(async (req, res) => {
 
 const myAllTransactions = asyncHandler(async (req, res) => {
     const user = req.user;
-     // Expected format: dd/mm/yy
+    // Expected format: dd/mm/yy
     console.log("fetched")
 
     let query = { sender_branch: user.branch };
@@ -198,7 +198,7 @@ const updateTransaction = asyncHandler(async (req, res) => {
             transaction.sender_branch,
             {
                 $inc: {
-                    opening_balance:decrypt_number(transaction.points),
+                    opening_balance: decrypt_number(transaction.points),
                     commission: c1,
                     today_commission: c1
                 }
@@ -223,6 +223,65 @@ const updateTransaction = asyncHandler(async (req, res) => {
 
 
     return returnCode(res, 200, true, "update transaction successfully", transaction);
+})
+
+const updateTrsactionDetail = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Validate transaction ID
+    if (!id) {
+        return returnCode(res, 400, false, "Transaction ID is required", null);
+    }
+
+    // Find the transaction
+    const transaction = await Transaction.findById(id);
+
+    if (!transaction) {
+        return returnCode(res, 404, false, "Transaction not found", null);
+    }
+
+    // Check if transaction is already approved by receiver
+    if (transaction.status === true) {
+        return returnCode(res, 400, false, "Cannot update transaction. It has already been approved by the receiver", null);
+    }
+
+    // Update the transaction with new data
+    const updatedTransaction = await Transaction.findByIdAndUpdate(
+        id,
+        updateData,
+        { new: true, runValidators: true }
+    );
+
+    if (!updatedTransaction) {
+        return returnCode(res, 500, false, "Failed to update transaction", null);
+    }
+
+    // Send notification to admin about the update
+    try {
+        const { Admin } = await import("../models/admin.model.js");
+        const user_admin = await Admin.findOne({ username: 'admin' });
+
+        if (user_admin && user_admin.deviceToken) {
+            const { sendFirebaseNotification } = await import("../utils/firebasePush.js");
+
+            const title = "Transaction Updated";
+            const body = `Transaction ${id} has been updated by user`;
+
+            await sendFirebaseNotification(user_admin.deviceToken, title, body, {
+                transactionId: updatedTransaction._id.toString(),
+                action: "transaction_updated",
+                updatedAt: updatedTransaction.updatedAt.toString()
+            });
+
+            console.log("Admin notification sent successfully for transaction update");
+        }
+    } catch (notificationError) {
+        console.error("Error sending notification to admin:", notificationError);
+        // Continue execution even if notification fails
+    }
+
+    return returnCode(res, 200, true, "Transaction updated successfully", updatedTransaction);
 })
 
 
@@ -292,14 +351,14 @@ const saveLogs = asyncHandler(async (req, res) => {
 
 })
 
-const openingBalance = asyncHandler(async(req,res)=>{
-    const {new_balance} = req.body;
+const openingBalance = asyncHandler(async (req, res) => {
+    const { new_balance } = req.body;
     const user = req.user;
 
-    const updateBranch = await Branch.findByIdAndUpdate(user.branch,{
-        
-            opening_balance:new_balance
-        
+    const updateBranch = await Branch.findByIdAndUpdate(user.branch, {
+
+        opening_balance: new_balance
+
     })
 })
 
@@ -310,6 +369,7 @@ export {
     myAllTransactions,
     allMyReciveTransactions,
     updateTransaction,
+    updateTrsactionDetail,
     deleteTransaction,
     isIEnable,
     updateTheUser,
