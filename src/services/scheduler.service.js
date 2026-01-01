@@ -73,9 +73,10 @@ export const initScheduler = () => {
     // "0 0 * * *" means at 00:00 (midnight) every day
     const cronExpression = "0 0 * * *";
 
-    cron.schedule(cronExpression,
+    const task = cron.schedule(cronExpression,
         () => {
             console.log("=== Daily Branch Snapshot Scheduler Triggered ===");
+            console.log(`Execution time: ${new Date().toISOString()} (${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST)`);
             createDailyBranchSnapshots();
         },
         {
@@ -84,7 +85,16 @@ export const initScheduler = () => {
         }
     );
 
-    console.log("✅ Daily branch snapshot scheduler initialized (Runs at 12:00 AM IST)");
+    const now = new Date();
+    const istTime = now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+
+    console.log("✅ Daily branch snapshot scheduler initialized!");
+    console.log(`   Current time: ${istTime} IST`);
+    console.log(`   Cron expression: ${cronExpression}`);
+    console.log(`   Next run: Midnight (12:00 AM) IST every day`);
+    console.log(`   Timezone: Asia/Kolkata (IST)`);
+
+    return task;
 };
 
 /**

@@ -162,7 +162,7 @@ const updateTransaction = asyncHandler(async (req, res) => {
     const { id } = req.params;
     console.log("code arrvied here")
 
-    // Update the transaction status
+    // Update the transaction status only
     const transaction = await Transaction.findByIdAndUpdate(
         id,
         { status: true },
@@ -175,52 +175,6 @@ const updateTransaction = asyncHandler(async (req, res) => {
         console.log("trsaction is: ", transaction)
         return returnCode(res, 500, false, "trsaction is not complete", null);
     }
-
-    const relationship = await CustomRelationship.findOne({
-        branch1_id: transaction.sender_branch,
-        branch2_id: transaction.receiver_branch
-    })
-
-    let c1 = transaction.commission;
-    let c2 = 0;
-
-    if (relationship) {
-        c1 = c1 * relationship.branch1_commission / 100;
-        c2 = transaction.commission * relationship.branch2_commission / 100;
-    }
-
-    transaction.sender_commision = c1;
-    transaction.receiver_commision = c2;
-    transaction.save();
-
-    const [updateBranchOpeningBalance, updateReceiverOpeningBalance] = await Promise.all([
-        Branch.findByIdAndUpdate(
-            transaction.sender_branch,
-            {
-                $inc: {
-                    opening_balance: decrypt_number(transaction.points),
-                    commission: c1,
-                    today_commission: c1
-                }
-            },
-            { new: true }
-        ),
-        Branch.findByIdAndUpdate(
-            transaction.receiver_branch,
-            {
-                $inc: {
-                    opening_balance: -decrypt_number(transaction.points),
-                    commission: c2,
-                    today_commission: c2
-                }
-            },
-            { new: true }
-        )
-    ]);
-
-
-
-
 
     return returnCode(res, 200, true, "update transaction successfully", transaction);
 })
@@ -239,11 +193,6 @@ const updateTrsactionDetail = asyncHandler(async (req, res) => {
 
     if (!transaction) {
         return returnCode(res, 404, false, "Transaction not found", null);
-    }
-
-    // Check if transaction is already approved by receiver
-    if (transaction.status === true) {
-        return returnCode(res, 400, false, "Cannot update transaction. It has already been approved by the receiver", null);
     }
 
     // Update the transaction with new data

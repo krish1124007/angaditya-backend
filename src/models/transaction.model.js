@@ -6,9 +6,9 @@ const TransactionSchema = new mongoose.Schema(
   {
 
     receiver_branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
-    other_receiver:{type:String,default:""},
+    other_receiver: { type: String, default: "" },
     sender_branch: { type: mongoose.Schema.Types.ObjectId, ref: "Branch", required: true },
-    other_sender:{type:String,default:""},
+    other_sender: { type: String, default: "" },
     points: { type: String, default: 0 },
     receiver_name: { type: String, required: false, default: "user" },
     receiver_mobile: { type: String, required: false, default: "user" },
@@ -17,13 +17,35 @@ const TransactionSchema = new mongoose.Schema(
     status: { type: Boolean, default: false },
     admin_permission: { type: Boolean, default: false },
     commission: { type: Number, default: 0 },
-    receiver_commision:{type:Number, default:0},
-    sender_commision:{type:Number, default:0}
+    receiver_commision: { type: Number, default: 0 },
+    sender_commision: { type: Number, default: 0 },
+    isEdited: { type: Boolean, default: false },
+    date: {
+      type: Date,
+      default: () => {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        return now;
+      }
+    }
   },
   { timestamps: true }
 );
 
 TransactionSchema.pre("save", function (next) {
+  // Track if any field (except status, admin_permission, isEdited, and timestamps) is modified
+  // This should run before encryption to track the actual user edits
+  const excludedFields = ['status', 'admin_permission', 'isEdited', 'createdAt', 'updatedAt', '_id', '__v', 'sender_commision', 'receiver_commision'];
+  const modifiedFields = this.modifiedPaths();
+
+  const hasContentChanges = modifiedFields.some(field => !excludedFields.includes(field));
+
+  // If this is not a new document and content fields were modified, set isEdited to true
+  if (!this.isNew && hasContentChanges) {
+    this.isEdited = true;
+  }
+
+  // Encrypt sensitive fields
   if (this.isModified("points")) this.points = encrypt_number(this.points);
   if (this.isModified("receiver_mobile")) this.receiver_mobile = encrypt_number(this.receiver_mobile);
   if (this.isModified("sender_mobile")) this.sender_mobile = encrypt_number(this.sender_mobile);

@@ -135,7 +135,25 @@ const updateAdmin = asyncHandler(async (req, res) => {
 });
 
 const getAllTransactions = asyncHandler(async (req, res) => {
+    // Determine the date filter
+    let dateFilter = {};
+
+    if (req?.body?.date) {
+        // If date is provided in body, use that date as start
+        const start = new Date(req.body.date);
+        start.setHours(0, 0, 0, 0);
+        dateFilter = { date: { $gte: start } };
+    } else {
+        // Default: return only today's transactions
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        dateFilter = { date: { $gte: start } };
+    }
+
     const transactions = await Transaction.aggregate([
+        // Filter by date (today by default, or specific date if provided)
+        { $match: dateFilter },
+
         // Join sender branch
         {
             $lookup: {
@@ -184,6 +202,7 @@ const getAllTransactions = asyncHandler(async (req, res) => {
                 status: 1,
                 stauts: 1,
                 admin_permission: 1,
+                date: 1,
                 createdAt: 1,
                 updatedAt: 1,
                 __v: 1,
@@ -202,7 +221,11 @@ const getAllTransactions = asyncHandler(async (req, res) => {
         },
     ]);
 
-    return returnCode(res, 200, true, "Transactions fetched successfully", transactions);
+    const message = req?.body?.date
+        ? `Transactions from ${req.body.date} fetched successfully`
+        : "Today's transactions fetched successfully";
+
+    return returnCode(res, 200, true, message, transactions);
 });
 
 const getTodayTransactions = asyncHandler(async (req, res) => {
@@ -313,23 +336,32 @@ const deleteBranch = asyncHandler(async (req, res) => {
 });
 
 const getAllBranches = asyncHandler(async (req, res) => {
-    // Expected format: dd/mm/yy
+    // Expected format: dd/mm/yy or YYYY-MM-DD
 
     // If date is provided, fetch snapshot data for that day
     if (req?.body?.date) {
         try {
-            // Parse date in dd/mm/yy format
-            const parts = date.split('/');
-            if (parts.length !== 3) {
-                return returnCode(res, 400, false, "Invalid date format. Use dd/mm/yy", null);
+            const date = req.body.date;
+            let snapshotDate;
+
+            // Try to parse date in dd/mm/yy format first
+            if (date.includes('/')) {
+                const parts = date.split('/');
+                if (parts.length !== 3) {
+                    return returnCode(res, 400, false, "Invalid date format. Use dd/mm/yy or YYYY-MM-DD", null);
+                }
+
+                const day = parseInt(parts[0]);
+                const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+                const year = parseInt(parts[2]) + 2000; // Assuming 20xx
+
+                // Set to midnight of that day
+                snapshotDate = new Date(year, month, day, 0, 0, 0, 0);
+            } else {
+                // Try parsing as YYYY-MM-DD
+                snapshotDate = new Date(date);
+                snapshotDate.setHours(0, 0, 0, 0);
             }
-
-            const day = parseInt(parts[0]);
-            const month = parseInt(parts[1]) - 1; // Month is 0-indexed
-            const year = parseInt(parts[2]) + 2000; // Assuming 20xx
-
-            // Set to midnight of that day
-            const snapshotDate = new Date(year, month, day, 0, 0, 0, 0);
 
             // Fetch snapshots for that specific date
             const snapshots = await BranchSnapshot.find({
@@ -360,9 +392,36 @@ const getAllBranches = asyncHandler(async (req, res) => {
         }
     }
 
-    // If no date provided, return current branch data
+    // Default: Return branches with today's transaction data
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
     const branches = await Branch.find();
-    return returnCode(res, 200, true, "Branches fetched successfully", branches);
+
+    // Get today's transactions for each branch to calculate today's activity
+    const todayTransactions = await Transaction.aggregate([
+        { $match: { date: { $gte: start } } },
+        {
+            $group: {
+                _id: null,
+                senderBranches: { $addToSet: "$sender_branch" },
+                receiverBranches: { $addToSet: "$receiver_branch" }
+            }
+        }
+    ]);
+
+    // Mark branches that have today's activity
+    const branchesWithTodayFlag = branches.map(branch => {
+        const branchObj = branch.toObject();
+        const hasTodayActivity = todayTransactions.length > 0 && (
+            todayTransactions[0].senderBranches.some(id => id.equals(branch._id)) ||
+            todayTransactions[0].receiverBranches.some(id => id.equals(branch._id))
+        );
+        branchObj.has_today_activity = hasTodayActivity;
+        return branchObj;
+    });
+
+    return returnCode(res, 200, true, "Today's branch data fetched successfully", branchesWithTodayFlag);
 });
 
 /* ---------------------- ENABLE / DISABLE ---------------------- */
@@ -398,19 +457,34 @@ const enableBranch = asyncHandler(async (req, res) => {
 /* ---------------------- TRANSACTION BY BRANCH ---------------------- */
 
 const getTrasactionBranchWise = asyncHandler(async (req, res) => {
-    const { branch_id } = req.body;
+    const { branch_id, date } = req.body;
     if (!branch_id) return returnCode(res, 400, false, "Branch id is required");
+
+    // Determine the date filter
+    let dateFilter = {};
+
+    if (date) {
+        // If date is provided in body, use that date as start
+        const start = new Date(date);
+        start.setHours(0, 0, 0, 0);
+        dateFilter = { date: { $gte: start } };
+    } else {
+        // Default: return only today's transactions
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        dateFilter = { date: { $gte: start } };
+    }
 
     const transactions = await Transaction.aggregate([
         {
             $match: {
+                ...dateFilter,
                 $or: [
                     { sender_branch: new mongoose.Types.ObjectId(branch_id) },
                     { receiver_branch: new mongoose.Types.ObjectId(branch_id) }
                 ]
             }
-        }
-        ,
+        },
 
         // Join sender branch
         {
@@ -460,6 +534,7 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
                 status: 1,
                 stauts: 1,
                 admin_permission: 1,
+                date: 1,
                 createdAt: 1,
                 updatedAt: 1,
                 sender_commision: 1,
@@ -480,7 +555,11 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
         },
     ]);
 
-    return returnCode(res, 200, true, "Transactions fetched", transactions);
+    const message = date
+        ? `Transactions for branch from ${date} fetched successfully`
+        : "Today's transactions for branch fetched successfully";
+
+    return returnCode(res, 200, true, message, transactions);
 });
 
 const deleteAllTransactions = asyncHandler(async (req, res) => {
@@ -497,16 +576,63 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
         return returnCode(res, 400, false, "Transaction id is required");
     }
 
-    // Update
-    const transaction = await Transaction.findByIdAndUpdate(
-        transactions_id,
-        { admin_permission: true },
-        { new: true }
-    );
+    // Fetch transaction first
+    const transaction = await Transaction.findById(transactions_id);
 
     if (!transaction) {
         return returnCode(res, 400, false, "Transaction not found");
     }
+
+    // Check if already approved
+    if (transaction.admin_permission === true) {
+        return returnCode(res, 400, false, "Transaction already approved by admin");
+    }
+
+    // Calculate commissions based on custom relationship
+    const relationship = await CustomRelationship.findOne({
+        branch1_id: transaction.sender_branch,
+        branch2_id: transaction.receiver_branch
+    });
+
+    let c1 = transaction.commission;
+    let c2 = 0;
+
+    if (relationship) {
+        c1 = c1 * relationship.branch1_commission / 100;
+        c2 = transaction.commission * relationship.branch2_commission / 100;
+    }
+
+    // Update branch balances and commissions
+    const [updateBranchOpeningBalance, updateReceiverOpeningBalance] = await Promise.all([
+        Branch.findByIdAndUpdate(
+            transaction.sender_branch,
+            {
+                $inc: {
+                    opening_balance: decrypt_number(transaction.points),
+                    commission: c1,
+                    today_commission: c1
+                }
+            },
+            { new: true }
+        ),
+        Branch.findByIdAndUpdate(
+            transaction.receiver_branch,
+            {
+                $inc: {
+                    opening_balance: -decrypt_number(transaction.points),
+                    commission: c2,
+                    today_commission: c2
+                }
+            },
+            { new: true }
+        )
+    ]);
+
+    // Update transaction with admin permission and commissions
+    transaction.admin_permission = true;
+    transaction.sender_commision = c1;
+    transaction.receiver_commision = c2;
+    await transaction.save();
 
     // Fetch enriched transaction with all fields including created_by_name
     const tx = await Transaction.aggregate([
