@@ -48,32 +48,26 @@ TransactionSchema.pre("save", function (next) {
   next();
 });
 
-TransactionSchema.pre("save", async function (next) {
-  if (this.isNew) return next();
+TransactionSchema.pre("findOneAndUpdate", function (next) {
+  const update = this.getUpdate().$set || {};
 
-  const original = await this.constructor.findById(this._id).lean();
-
-  const editableFields = [
+  const EDITABLE_FIELDS = [
     "receiver_branch",
     "sender_branch",
     "other_receiver",
     "other_sender",
-    "points",
-    "receiver_name",
-    "receiver_mobile",
-    "sender_name",
-    "sender_mobile",
     "commission"
   ];
 
-  const hasRealChange = editableFields.some(
-    field => this[field]?.toString() !== original[field]?.toString()
+  const hasRealChange = Object.keys(update).some(field =>
+    EDITABLE_FIELDS.includes(field)
   );
 
   if (hasRealChange) {
-    this.isEdited = true;
+    update.isEdited = true;
   }
 
+  this.setUpdate({ $set: update });
   next();
 });
 
