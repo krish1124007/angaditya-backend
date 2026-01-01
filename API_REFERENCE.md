@@ -9,8 +9,9 @@ All admin APIs now default to returning **today's data**. To fetch historical da
 
 ### Endpoint
 ```
-POST /admin/transactions
+POST /api/v1/admin/get-all-transactions
 ```
+**Note:** Changed from GET to POST to support optional `date` parameter in request body.
 
 ### Default Behavior
 Returns only today's transactions
@@ -51,8 +52,9 @@ Returns only today's transactions
 
 ### Endpoint
 ```
-POST /admin/branches
+POST /api/v1/admin/get-all-branches
 ```
+**Note:** Changed from GET to POST to support optional `date` parameter in request body.
 
 ### Default Behavior
 Returns all branches with a flag indicating if they have activity today
@@ -119,7 +121,7 @@ OR
 
 ### Endpoint
 ```
-POST /admin/transactions/branch
+POST /api/v1/admin/get-transaction-branch-wise
 ```
 
 ### Default Behavior
@@ -170,7 +172,7 @@ Returns only today's transactions for the specified branch
 
 ### Endpoint
 ```
-POST /admin/transactions/today
+GET /api/v1/admin/get-today-transactions
 ```
 
 ### Behavior
@@ -190,7 +192,7 @@ Same format as "Get All Transactions"
 
 ### Endpoint
 ```
-POST /admin/trigger-snapshot
+POST /api/v1/admin/trigger-snapshot
 ```
 
 ### Behavior

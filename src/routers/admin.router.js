@@ -35,12 +35,12 @@ const router = Router();
 
 router.route("/create-admin").post(createAdmin);
 router.route("/login-admin").post(loginAdmin);
-router.route("/get-all-transactions").get(auth, getAllTransactions);
+router.route("/get-all-transactions").post(auth, getAllTransactions);  // Changed to POST to support request body
 router.route("/get-today-transactions").get(auth, getTodayTransactions);
 router.route("/create-branch").post(auth, createBranch);
 router.route("/update-branch").post(auth, updateBranch);
 router.route("/delete-branch").post(auth, deleteBranch);
-router.route("/get-all-branches").get(auth, getAllBranches);
+router.route("/get-all-branches").post(auth, getAllBranches);  // Changed to POST to support request body
 router.route("/disable-all-branch").post(auth, disableAllbranch);
 router.route("/enable-all-branch").post(auth, enableAllbranch);
 router.route("/disable-branch").post(auth, disableBrach);
