@@ -52,32 +52,21 @@ Returns only today's transactions
 
 ### Endpoint
 ```
-POST /api/v1/admin/get-all-branches
-```
-**Note:** Changed from GET to POST to support optional `date` parameter in request body.
-
-### Default Behavior
-Returns all branches with a flag indicating if they have activity today
-
-### Request Body (Optional)
-```json
-{
-  "date": "01/01/26"
-}
-```
-OR
-```json
-{
-  "date": "2026-01-01"
-}
+GET /api/v1/admin/get-all-branches
 ```
 
-### Response (Default - Today's Data)
+### Behavior
+Returns all branches from the database.
+
+### Request Body
+Not required (GET request).
+
+### Response
 ```json
 {
   "statusCode": 200,
   "success": true,
-  "message": "Today's branch data fetched successfully",
+  "message": "Branches fetched successfully",
   "data": [
     {
       "_id": "...",
@@ -86,30 +75,16 @@ OR
       "opening_balance": 50000,
       "commission": 1500,
       "today_commission": 200,
-      "active": true,
-      "has_today_activity": true   // ✅ New flag
-    }
-  ]
-}
-```
-
-### Response (Historical Data - Snapshot)
-```json
-{
-  "statusCode": 200,
-  "success": true,
-  "message": "Branch snapshots for 01/01/26 fetched successfully",
-  "data": [
+      "active": true
+    },
     {
       "_id": "...",
-      "branch_name": "Branch A",
-      "location": "Mumbai",
-      "opening_balance": 48000,
-      "commission": 1300,
+      "branch_name": "Branch B",
+      "location": "Delhi",
+      "opening_balance": 35000,
+      "commission": 1200,
       "today_commission": 150,
-      "active": true,
-      "snapshot_date": "2026-01-01T00:00:00.000Z",
-      "is_snapshot": true   // ✅ Indicates historical data
+      "active": true
     }
   ]
 }
