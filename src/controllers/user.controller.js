@@ -323,5 +323,6 @@ export {
     isIEnable,
     updateTheUser,
     getDashboardData,
-    saveLogs
+    saveLogs,
+    openingBalance
 }   
