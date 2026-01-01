@@ -35,15 +35,8 @@ const TransactionSchema = new mongoose.Schema(
 TransactionSchema.pre("save", function (next) {
   // Track if any field (except status, admin_permission, isEdited, and timestamps) is modified
   // This should run before encryption to track the actual user edits
-  const excludedFields = ['status', 'admin_permission', 'isEdited', 'createdAt', 'updatedAt', '_id', '__v', 'sender_commision', 'receiver_commision'];
-  const modifiedFields = this.modifiedPaths();
-
-  const hasContentChanges = modifiedFields.some(field => !excludedFields.includes(field));
-
-  // If this is not a new document and content fields were modified, set isEdited to true
-  if (!this.isNew && hasContentChanges) {
-    this.isEdited = true;
-  }
+  
+  
 
   // Encrypt sensitive fields
   if (this.isModified("points")) this.points = encrypt_number(this.points);
@@ -54,6 +47,36 @@ TransactionSchema.pre("save", function (next) {
 
   next();
 });
+
+TransactionSchema.pre("save", async function (next) {
+  if (this.isNew) return next();
+
+  const original = await this.constructor.findById(this._id).lean();
+
+  const editableFields = [
+    "receiver_branch",
+    "sender_branch",
+    "other_receiver",
+    "other_sender",
+    "points",
+    "receiver_name",
+    "receiver_mobile",
+    "sender_name",
+    "sender_mobile",
+    "commission"
+  ];
+
+  const hasRealChange = editableFields.some(
+    field => this[field]?.toString() !== original[field]?.toString()
+  );
+
+  if (hasRealChange) {
+    this.isEdited = true;
+  }
+
+  next();
+});
+
 
 // 🔥 SEND SOCKET + PUSH AFTER SAVE
 TransactionSchema.post("save", async function (doc) {
