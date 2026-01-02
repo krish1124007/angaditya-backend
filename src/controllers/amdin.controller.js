@@ -139,15 +139,19 @@ const getAllTransactions = asyncHandler(async (req, res) => {
     let dateFilter = {};
 
     if (req?.body?.date) {
-        // If date is provided in body, use that date as start
+        // If date is provided in body, use that date as start and end
         const start = new Date(req.body.date);
         start.setHours(0, 0, 0, 0);
-        dateFilter = { date: { $gte: start } };
+        const end = new Date(req.body.date);
+        end.setHours(23, 59, 59, 999);
+        dateFilter = { date: { $gte: start, $lte: end } };
     } else {
         // Default: return only today's transactions
         const start = new Date();
         start.setHours(0, 0, 0, 0);
-        dateFilter = { date: { $gte: start } };
+        const end = new Date();
+        end.setHours(23, 59, 59, 999);
+        dateFilter = { date: { $gte: start, $lte: end } };
     }
 
     const transactions = await Transaction.aggregate([
@@ -231,9 +235,11 @@ const getAllTransactions = asyncHandler(async (req, res) => {
 const getTodayTransactions = asyncHandler(async (req, res) => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
 
     const transactions = await Transaction.aggregate([
-        { $match: { date: { $gte: start } } },
+        { $match: { date: { $gte: start, $lte: end } } },
 
         // Join sender branch
         {
@@ -380,15 +386,19 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     let dateFilter = {};
 
     if (date) {
-        // If date is provided in body, use that date as start
+        // If date is provided in body, use that date as start and end
         const start = new Date(date);
         start.setHours(0, 0, 0, 0);
-        dateFilter = { date: { $gte: start } };
+        const end = new Date(date);
+        end.setHours(23, 59, 59, 999);
+        dateFilter = { date: { $gte: start, $lte: end } };
     } else {
         // Default: return only today's transactions
         const start = new Date();
         start.setHours(0, 0, 0, 0);
-        dateFilter = { date: { $gte: start } };
+        const end = new Date();
+        end.setHours(23, 59, 59, 999);
+        dateFilter = { date: { $gte: start, $lte: end } };
     }
 
     const transactions = await Transaction.aggregate([
