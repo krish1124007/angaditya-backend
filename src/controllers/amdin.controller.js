@@ -225,7 +225,6 @@ const getAllTransactions = asyncHandler(async (req, res) => {
             },
         },
         { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
-
         {
             $project: {
                 // Original fields
@@ -915,10 +914,7 @@ const editTransaction = asyncHandler(async (req, res) => {
         return returnCode(res, 404, false, "Transaction not found");
     }
 
-    // Check if transaction has been approved by admin
-    if (transaction.admin_permission === true) {
-        return returnCode(res, 400, false, "Cannot edit approved transactions");
-    }
+    
 
     // Mark transaction as edited and update the data
     const updatedTransaction = await Transaction.findByIdAndUpdate(
