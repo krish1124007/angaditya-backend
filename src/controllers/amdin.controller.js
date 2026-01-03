@@ -397,11 +397,66 @@ const getAllBranches = asyncHandler(async (req, res) => {
         const end = new Date(dateString);
         end.setHours(23, 59, 59, 999);
 
-        const branches = await BranchSnapshot.find({ snapshot_date: { $gte: start, $lte: end } });
-        return returnCode(res, 200, true, "Branches fetched successfully", branches);
+        // Fetch branch snapshots
+        const branches = await BranchSnapshot.find({ snapshot_date: { $gte: start, $lte: end } })
+            .populate('branch_id', 'branch_name location active')
+            .lean();
+
+        // Count transactions for each branch for the specific date
+        const branchesWithCounts = await Promise.all(branches.map(async (branch) => {
+            const branchId = branch.branch_id._id;
+
+            // Count transactions where this branch is sender
+            const sentCount = await Transaction.countDocuments({
+                sender_branch: branchId,
+                date: { $gte: start, $lte: end }
+            });
+
+            // Count transactions where this branch is receiver
+            const receivedCount = await Transaction.countDocuments({
+                receiver_branch: branchId,
+                date: { $gte: start, $lte: end }
+            });
+
+            return {
+                ...branch,
+                transaction_count: {
+                    sent: sentCount,
+                    received: receivedCount,
+                    total: sentCount + receivedCount
+                }
+            };
+        }));
+
+        return returnCode(res, 200, true, "Branches fetched successfully", branchesWithCounts);
     }
-    const branches = await Branch.find();
-    return returnCode(res, 200, true, "Branches fetched successfully", branches);
+
+    // When no date is provided, fetch all branches with all-time transaction counts
+    const branches = await Branch.find().lean();
+
+    // Count all transactions for each branch
+    const branchesWithCounts = await Promise.all(branches.map(async (branch) => {
+        // Count transactions where this branch is sender
+        const sentCount = await Transaction.countDocuments({
+            sender_branch: branch._id
+        });
+
+        // Count transactions where this branch is receiver
+        const receivedCount = await Transaction.countDocuments({
+            receiver_branch: branch._id
+        });
+
+        return {
+            ...branch,
+            transaction_count: {
+                sent: sentCount,
+                received: receivedCount,
+                total: sentCount + receivedCount
+            }
+        };
+    }));
+
+    return returnCode(res, 200, true, "Branches fetched successfully", branchesWithCounts);
 });
 
 /* ---------------------- ENABLE / DISABLE ---------------------- */
@@ -914,7 +969,7 @@ const editTransaction = asyncHandler(async (req, res) => {
         return returnCode(res, 404, false, "Transaction not found");
     }
 
-    
+
 
     // Mark transaction as edited and update the data
     const updatedTransaction = await Transaction.findByIdAndUpdate(
