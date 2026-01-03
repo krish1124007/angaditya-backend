@@ -25,6 +25,7 @@ import {
     getLatestSnapshots,
     createRelationShip,
     createTransaction,
+    editTransaction,
     getDateRangeReport
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
@@ -61,6 +62,7 @@ router.route("/get-snapshots").post(auth, getBranchSnapshots);
 router.route("/get-latest-snapshots").get(auth, getLatestSnapshots);
 router.route("/create-relationship").post(auth, createRelationShip);
 router.route("/create-transaction").post(auth, createTransaction);
+router.route("/edit-transaction").post(auth, editTransaction);
 router.route("/get-date-range-report").post(auth, getDateRangeReport);
 
 export const admin_router = router;

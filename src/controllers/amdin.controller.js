@@ -244,6 +244,7 @@ const getAllTransactions = asyncHandler(async (req, res) => {
                 date: 1,
                 createdAt: 1,
                 updatedAt: 1,
+                commission: 1,
                 __v: 1,
 
                 // Additional calculated fields
@@ -894,6 +895,52 @@ const createTransaction = asyncHandler(async (req, res) => {
 })
 
 
+const editTransaction = asyncHandler(async (req, res) => {
+    const { transaction_id, update_data } = req.body;
+
+    // Validate transaction ID
+    if (!transaction_id) {
+        return returnCode(res, 400, false, "Transaction ID is required");
+    }
+
+    // Validate update data
+    if (!update_data || Object.keys(update_data).length === 0) {
+        return returnCode(res, 400, false, "Update data is required");
+    }
+
+    // Find the transaction
+    const transaction = await Transaction.findById(transaction_id);
+
+    if (!transaction) {
+        return returnCode(res, 404, false, "Transaction not found");
+    }
+
+    // Check if transaction has been approved by admin
+    if (transaction.admin_permission === true) {
+        return returnCode(res, 400, false, "Cannot edit approved transactions");
+    }
+
+    // Mark transaction as edited and update the data
+    const updatedTransaction = await Transaction.findByIdAndUpdate(
+        transaction_id,
+        {
+            ...update_data,
+            isEdited: true
+        },
+        { new: true, runValidators: true }
+    );
+
+    if (!updatedTransaction) {
+        return returnCode(res, 500, false, "Failed to update transaction");
+    }
+
+    // Fetch enriched transaction with branch names
+    const enrichedTransaction = await getTransactionWithBranchNames(transaction_id);
+
+    return returnCode(res, 200, true, "Transaction updated successfully", enrichedTransaction || updatedTransaction);
+});
+
+
 
 
 /* ---------------------- DATE RANGE REPORT ---------------------- */
@@ -1206,5 +1253,6 @@ export {
     getLatestSnapshots,
     createRelationShip,
     createTransaction,
+    editTransaction,
     getDateRangeReport
 };
