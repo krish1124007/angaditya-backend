@@ -5,6 +5,7 @@ import { Transaction } from "../models/transaction.model.js";
 import { Branch } from "../models/branch.model.js";
 import moment from "moment";
 import { decrypt_number } from "../secrets/decrypt.js";
+import { encrypt_number, encrypt_text } from "../secrets/encrypt.js";
 import { UserAccessLog } from "../models/useraccesslog.model.js"
 import { CustomRelationship } from "../models/custom_relationship.js";
 
@@ -195,10 +196,33 @@ const updateTrsactionDetail = asyncHandler(async (req, res) => {
         return returnCode(res, 404, false, "Transaction not found", null);
     }
 
-    // Update the transaction with new data
+    // Prepare update with encryption for sensitive fields
+    const updateFields = { ...updateData };
+
+    // Encrypt fields if they are being updated
+    if (updateFields.points) {
+        updateFields.points = encrypt_number(updateFields.points);
+    }
+    if (updateFields.receiver_mobile) {
+        updateFields.receiver_mobile = encrypt_number(updateFields.receiver_mobile);
+    }
+    if (updateFields.sender_mobile) {
+        updateFields.sender_mobile = encrypt_number(updateFields.sender_mobile);
+    }
+    if (updateFields.receiver_name) {
+        updateFields.receiver_name = encrypt_text(updateFields.receiver_name);
+    }
+    if (updateFields.sender_name) {
+        updateFields.sender_name = encrypt_text(updateFields.sender_name);
+    }
+
+    // Mark transaction as edited
+    updateFields.isEdited = true;
+
+    // Update the transaction with new data using $set
     const updatedTransaction = await Transaction.findByIdAndUpdate(
         id,
-        {...updateData, isEdited: true},
+        { $set: updateFields },
         { new: true, runValidators: true }
     );
 
@@ -307,7 +331,7 @@ const openingBalance = asyncHandler(async (req, res) => {
 
     const user = req.user;
 
-    if(!new_balance){
+    if (!new_balance) {
         return returnCode(res, 400, false, "new_balance is required", null)
     }
     console.log("updateing the branch balance");

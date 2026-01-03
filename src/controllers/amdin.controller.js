@@ -7,6 +7,7 @@ import { Branch } from "../models/branch.model.js";
 import { User } from "../models/user.model.js";
 import { sendExpoNotification } from "../utils/expoPush.js";
 import { decrypt_number, decrypt_text } from "../secrets/decrypt.js";
+import { encrypt_number, encrypt_text } from "../secrets/encrypt.js";
 import { UserAccessLog } from "../models/useraccesslog.model.js";
 import { CustomRelationship } from "../models/custom_relationship.js";
 import { BranchSnapshot } from "../models/branch-snapshot.model.js";
@@ -969,15 +970,33 @@ const editTransaction = asyncHandler(async (req, res) => {
         return returnCode(res, 404, false, "Transaction not found");
     }
 
+    // Prepare update with encryption for sensitive fields
+    const updateFields = { ...update_data };
 
+    // Encrypt fields if they are being updated
+    if (updateFields.points) {
+        updateFields.points = encrypt_number(updateFields.points);
+    }
+    if (updateFields.receiver_mobile) {
+        updateFields.receiver_mobile = encrypt_number(updateFields.receiver_mobile);
+    }
+    if (updateFields.sender_mobile) {
+        updateFields.sender_mobile = encrypt_number(updateFields.sender_mobile);
+    }
+    if (updateFields.receiver_name) {
+        updateFields.receiver_name = encrypt_text(updateFields.receiver_name);
+    }
+    if (updateFields.sender_name) {
+        updateFields.sender_name = encrypt_text(updateFields.sender_name);
+    }
 
-    // Mark transaction as edited and update the data
+    // Mark transaction as edited
+    updateFields.isEdited = true;
+
+    // Update the transaction using $set
     const updatedTransaction = await Transaction.findByIdAndUpdate(
         transaction_id,
-        {
-            ...update_data,
-            isEdited: true
-        },
+        { $set: updateFields },
         { new: true, runValidators: true }
     );
 
