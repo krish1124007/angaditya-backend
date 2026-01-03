@@ -342,6 +342,16 @@ const deleteBranch = asyncHandler(async (req, res) => {
 });
 
 const getAllBranches = asyncHandler(async (req, res) => {
+
+    if(req?.body?.date){
+        const start = new Date(req.body.date);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(req.body.date);
+        end.setHours(23, 59, 59, 999);
+
+        const branches = await BranchSnapshot.find({ snapshot_date: { $gte: start, $lte: end } });
+        return returnCode(res, 200, true, "Branches fetched successfully", branches);
+    }
     const branches = await Branch.find();
     return returnCode(res, 200, true, "Branches fetched successfully", branches);
 });
