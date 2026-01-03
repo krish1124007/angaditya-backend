@@ -245,6 +245,7 @@ const getAllTransactions = asyncHandler(async (req, res) => {
                 createdAt: 1,
                 updatedAt: 1,
                 commission: 1,
+                isEdited: 1,
                 __v: 1,
 
                 // Additional calculated fields
