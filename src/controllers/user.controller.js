@@ -198,13 +198,14 @@ const updateTrsactionDetail = asyncHandler(async (req, res) => {
     // Update the transaction with new data
     const updatedTransaction = await Transaction.findByIdAndUpdate(
         id,
-        updateData,
+        {...updateData, isEdited: true},
         { new: true, runValidators: true }
     );
 
     if (!updatedTransaction) {
         return returnCode(res, 500, false, "Failed to update transaction", null);
     }
+
 
     // Send notification to admin about the update
     try {
@@ -302,13 +303,21 @@ const saveLogs = asyncHandler(async (req, res) => {
 
 const openingBalance = asyncHandler(async (req, res) => {
     const { new_balance } = req.body;
+
+
     const user = req.user;
 
+    if(!new_balance){
+        return returnCode(res, 400, false, "new_balance is required", null)
+    }
+    console.log("updateing the branch balance");
     const updateBranch = await Branch.findByIdAndUpdate(user.branch, {
 
         opening_balance: new_balance
 
     })
+
+    return returnCode(res, 200, true, "Branch balance updated successfully", updateBranch)
 })
 
 export {
