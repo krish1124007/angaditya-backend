@@ -40,7 +40,7 @@ router.route("/get-today-transactions").get(auth, getTodayTransactions);
 router.route("/create-branch").post(auth, createBranch);
 router.route("/update-branch").post(auth, updateBranch);
 router.route("/delete-branch").post(auth, deleteBranch);
-router.route("/get-all-branches").get(auth, getAllBranches);  // GET - no request body needed
+router.route("/get-all-branches").post(auth, getAllBranches);  // GET - no request body needed
 router.route("/disable-all-branch").post(auth, disableAllbranch);
 router.route("/enable-all-branch").post(auth, enableAllbranch);
 router.route("/disable-branch").post(auth, disableBrach);
