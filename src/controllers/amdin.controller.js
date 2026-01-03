@@ -13,7 +13,29 @@ import { BranchSnapshot } from "../models/branch-snapshot.model.js";
 import { manualCreateSnapshots } from "../services/scheduler.service.js";
 
 
+/* ---------------------- HELPER FUNCTIONS ---------------------- */
+
+/**
+ * Parse date string from frontend format (YY-MM-DD) to Date object
+ * Supports formats: "26-01-02" (YY-MM-DD), "2026-01-02" (ISO), etc.
+ * @param {string} dateString - The date string to parse
+ * @returns {string} - ISO format date string (YYYY-MM-DD)
+ */
+const parseDateString = (dateString) => {
+    // Check if the date is in YY-MM-DD format (e.g., "26-01-02")
+    if (dateString.match(/^\d{2}-\d{2}-\d{2}$/)) {
+        const [yy, mm, dd] = dateString.split('-');
+        // Convert YY to full year (20YY)
+        const fullYear = `20${yy}`;
+        // Return ISO format date string (YYYY-MM-DD)
+        return `${fullYear}-${mm}-${dd}`;
+    }
+    // Return as-is for other formats (ISO, etc.)
+    return dateString;
+};
+
 /* ---------------------- AGGREGATION ---------------------- */
+
 
 const getTransactionWithBranchNames = async (transactionId) => {
     const result = await Transaction.aggregate([
@@ -139,10 +161,23 @@ const getAllTransactions = asyncHandler(async (req, res) => {
     let dateFilter = {};
 
     if (req?.body?.date) {
+        // Parse date from YY-MM-DD format (e.g., "26-01-02")
+        let dateString = req.body.date;
+
+        // Check if the date is in YY-MM-DD format
+        if (dateString.match(/^\d{2}-\d{2}-\d{2}$/)) {
+            // Split the date string
+            const [yy, mm, dd] = dateString.split('-');
+            // Convert YY to full year (20YY)
+            const fullYear = `20${yy}`;
+            // Create ISO format date string (YYYY-MM-DD)
+            dateString = `${fullYear}-${mm}-${dd}`;
+        }
+
         // If date is provided in body, use that date as start and end
-        const start = new Date(req.body.date);
+        const start = new Date(dateString);
         start.setHours(0, 0, 0, 0);
-        const end = new Date(req.body.date);
+        const end = new Date(dateString);
         end.setHours(23, 59, 59, 999);
         dateFilter = { date: { $gte: start, $lte: end } };
     } else {
@@ -343,10 +378,23 @@ const deleteBranch = asyncHandler(async (req, res) => {
 
 const getAllBranches = asyncHandler(async (req, res) => {
 
-    if(req?.body?.date){
-        const start = new Date(req.body.date);
+    if (req?.body?.date) {
+        // Parse date from YY-MM-DD format (e.g., "26-01-02")
+        let dateString = req.body.date;
+
+        // Check if the date is in YY-MM-DD format
+        if (dateString.match(/^\d{2}-\d{2}-\d{2}$/)) {
+            // Split the date string
+            const [yy, mm, dd] = dateString.split('-');
+            // Convert YY to full year (20YY)
+            const fullYear = `20${yy}`;
+            // Create ISO format date string (YYYY-MM-DD)
+            dateString = `${fullYear}-${mm}-${dd}`;
+        }
+
+        const start = new Date(dateString);
         start.setHours(0, 0, 0, 0);
-        const end = new Date(req.body.date);
+        const end = new Date(dateString);
         end.setHours(23, 59, 59, 999);
 
         const branches = await BranchSnapshot.find({ snapshot_date: { $gte: start, $lte: end } });
@@ -396,10 +444,23 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     let dateFilter = {};
 
     if (date) {
+        // Parse date from YY-MM-DD format (e.g., "26-01-02")
+        let dateString = date;
+
+        // Check if the date is in YY-MM-DD format
+        if (dateString.match(/^\d{2}-\d{2}-\d{2}$/)) {
+            // Split the date string
+            const [yy, mm, dd] = dateString.split('-');
+            // Convert YY to full year (20YY)
+            const fullYear = `20${yy}`;
+            // Create ISO format date string (YYYY-MM-DD)
+            dateString = `${fullYear}-${mm}-${dd}`;
+        }
+
         // If date is provided in body, use that date as start and end
-        const start = new Date(date);
+        const start = new Date(dateString);
         start.setHours(0, 0, 0, 0);
-        const end = new Date(date);
+        const end = new Date(dateString);
         end.setHours(23, 59, 59, 999);
         dateFilter = { date: { $gte: start, $lte: end } };
     } else {
@@ -730,10 +791,36 @@ const getBranchSnapshots = asyncHandler(async (req, res) => {
     if (start_date || end_date) {
         query.snapshot_date = {};
         if (start_date) {
-            query.snapshot_date.$gte = new Date(start_date);
+            // Parse date from YY-MM-DD format (e.g., "26-01-02")
+            let dateString = start_date;
+
+            // Check if the date is in YY-MM-DD format
+            if (dateString.match(/^\d{2}-\d{2}-\d{2}$/)) {
+                // Split the date string
+                const [yy, mm, dd] = dateString.split('-');
+                // Convert YY to full year (20YY)
+                const fullYear = `20${yy}`;
+                // Create ISO format date string (YYYY-MM-DD)
+                dateString = `${fullYear}-${mm}-${dd}`;
+            }
+
+            query.snapshot_date.$gte = new Date(dateString);
         }
         if (end_date) {
-            query.snapshot_date.$lte = new Date(end_date);
+            // Parse date from YY-MM-DD format (e.g., "26-01-02")
+            let dateString = end_date;
+
+            // Check if the date is in YY-MM-DD format
+            if (dateString.match(/^\d{2}-\d{2}-\d{2}$/)) {
+                // Split the date string
+                const [yy, mm, dd] = dateString.split('-');
+                // Convert YY to full year (20YY)
+                const fullYear = `20${yy}`;
+                // Create ISO format date string (YYYY-MM-DD)
+                dateString = `${fullYear}-${mm}-${dd}`;
+            }
+
+            query.snapshot_date.$lte = new Date(dateString);
         }
     }
 
@@ -825,34 +912,53 @@ const getDateRangeReport = asyncHandler(async (req, res) => {
     }
 
     try {
-        // Parse dates - support both dd/mm/yy and ISO formats
+        // Parse dates - support dd/mm/yy, yy-mm-dd, and ISO formats
         let startDateTime, endDateTime;
 
-        // Try to parse as dd/mm/yy format first
+        // Parse start_date
         if (start_date.includes('/')) {
+            // dd/mm/yy format
             const startParts = start_date.split('/');
             if (startParts.length !== 3) {
-                return returnCode(res, 400, false, "Invalid start_date format. Use dd/mm/yy or ISO format");
+                return returnCode(res, 400, false, "Invalid start_date format. Use dd/mm/yy, yy-mm-dd, or ISO format");
             }
             const startDay = parseInt(startParts[0]);
             const startMonth = parseInt(startParts[1]) - 1;
             const startYear = parseInt(startParts[2]) + 2000;
             startDateTime = new Date(startYear, startMonth, startDay, 0, 0, 0, 0);
+        } else if (start_date.match(/^\d{2}-\d{2}-\d{2}$/)) {
+            // yy-mm-dd format (e.g., "26-01-02")
+            const [yy, mm, dd] = start_date.split('-');
+            const fullYear = `20${yy}`;
+            const dateString = `${fullYear}-${mm}-${dd}`;
+            startDateTime = new Date(dateString);
+            startDateTime.setHours(0, 0, 0, 0);
         } else {
+            // ISO or other standard format
             startDateTime = new Date(start_date);
             startDateTime.setHours(0, 0, 0, 0);
         }
 
+        // Parse end_date
         if (end_date.includes('/')) {
+            // dd/mm/yy format
             const endParts = end_date.split('/');
             if (endParts.length !== 3) {
-                return returnCode(res, 400, false, "Invalid end_date format. Use dd/mm/yy or ISO format");
+                return returnCode(res, 400, false, "Invalid end_date format. Use dd/mm/yy, yy-mm-dd, or ISO format");
             }
             const endDay = parseInt(endParts[0]);
             const endMonth = parseInt(endParts[1]) - 1;
             const endYear = parseInt(endParts[2]) + 2000;
             endDateTime = new Date(endYear, endMonth, endDay, 23, 59, 59, 999);
+        } else if (end_date.match(/^\d{2}-\d{2}-\d{2}$/)) {
+            // yy-mm-dd format (e.g., "26-01-02")
+            const [yy, mm, dd] = end_date.split('-');
+            const fullYear = `20${yy}`;
+            const dateString = `${fullYear}-${mm}-${dd}`;
+            endDateTime = new Date(dateString);
+            endDateTime.setHours(23, 59, 59, 999);
         } else {
+            // ISO or other standard format
             endDateTime = new Date(end_date);
             endDateTime.setHours(23, 59, 59, 999);
         }
