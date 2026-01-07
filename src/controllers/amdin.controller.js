@@ -12,6 +12,8 @@ import { UserAccessLog } from "../models/useraccesslog.model.js";
 import { CustomRelationship } from "../models/custom_relationship.js";
 import { BranchSnapshot } from "../models/branch-snapshot.model.js";
 import { manualCreateSnapshots } from "../services/scheduler.service.js";
+import { DailyCommission } from "../models/daily-commission.model.js";
+import { HOLeaderSnapshot } from "../models/ho-leader-snapshot.model.js";
 
 
 /* ---------------------- HELPER FUNCTIONS ---------------------- */
@@ -422,6 +424,7 @@ const getAllBranches = asyncHandler(async (req, res) => {
 
             return {
                 ...branch,
+                commission: branch.total_commission || 0, // Map for frontend consistency
                 transaction_count: {
                     sent: sentCount,
                     received: receivedCount,
@@ -920,6 +923,79 @@ const getLatestSnapshots = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, "Latest snapshots fetched successfully", snapshots);
 });
 
+const checkSchedulerHealth = asyncHandler(async (req, res) => {
+    try {
+        // Get the most recent snapshot
+        const latestSnapshot = await BranchSnapshot.findOne()
+            .sort({ createdAt: -1 })
+            .populate('branch_id', 'branch_name');
+
+        // Get all snapshots from today
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+
+        const todaySnapshots = await BranchSnapshot.find({
+            snapshot_date: { $gte: today, $lte: todayEnd }
+        });
+
+        // Get total number of active branches
+        const activeBranches = await Branch.countDocuments({ active: true });
+
+        // Calculate time since last snapshot
+        let timeSinceLastSnapshot = null;
+        let lastSnapshotDate = null;
+        if (latestSnapshot) {
+            lastSnapshotDate = latestSnapshot.createdAt;
+            timeSinceLastSnapshot = Date.now() - latestSnapshot.createdAt.getTime();
+        }
+
+        // Determine scheduler health status
+        const currentTime = new Date();
+        const currentHour = currentTime.getHours();
+
+        let status = "healthy";
+        let message = "Scheduler appears to be working correctly";
+
+        // If it's past 1 AM and no snapshots were created today, scheduler might be broken
+        if (currentHour >= 1 && todaySnapshots.length === 0) {
+            status = "error";
+            message = "No snapshots created today! Scheduler may not be running.";
+        } else if (currentHour >= 1 && todaySnapshots.length < activeBranches) {
+            status = "warning";
+            message = `Only ${todaySnapshots.length} of ${activeBranches} snapshots created today`;
+        } else if (!latestSnapshot) {
+            status = "error";
+            message = "No snapshots found in database";
+        }
+
+        const healthData = {
+            status,
+            message,
+            current_time: currentTime.toISOString(),
+            ist_time: currentTime.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+            latest_snapshot: latestSnapshot ? {
+                branch_name: latestSnapshot.branch_id?.branch_name,
+                snapshot_date: latestSnapshot.snapshot_date,
+                created_at: latestSnapshot.createdAt,
+                hours_ago: timeSinceLastSnapshot ? Math.floor(timeSinceLastSnapshot / (1000 * 60 * 60)) : null
+            } : null,
+            today_stats: {
+                snapshots_created_today: todaySnapshots.length,
+                total_active_branches: activeBranches,
+                all_branches_covered: todaySnapshots.length >= activeBranches
+            }
+        };
+
+        return returnCode(res, 200, true, message, healthData);
+    } catch (error) {
+        console.error("Error checking scheduler health:", error);
+        return returnCode(res, 500, false, "Error checking scheduler health: " + error.message);
+    }
+});
+
+
 
 const createRelationShip = asyncHandler(async (req, res) => {
     const { branch1_id, branch2_id, branch1_commission, branch2_commission } = req.body;
@@ -1296,6 +1372,111 @@ const getDateRangeReport = asyncHandler(async (req, res) => {
     }
 });
 
+/* ---------------------- SPECIAL COMMISSION OPERATIONS ---------------------- */
+
+const finalizeDailyCommission = asyncHandler(async (req, res) => {
+    // 1. Get all branches
+    const branches = await Branch.find({});
+
+    // 2. Calculate total daily commission and HO metrics
+    let totalTodayCommission = 0;
+
+    let posTotalBal = 0;
+    let negTotalBal = 0;
+    let posTotalComm = 0;
+    let negTotalComm = 0;
+    let posCount = 0;
+    let negCount = 0;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const dailyEarningPromises = branches.map(async (branch) => {
+        const branchComm = branch.commission || 0;
+        const branchTodayComm = branch.today_commission || 0;
+        const branchBal = branch.opening_balance || 0;
+
+        // Exclude specific branches from HO metrics
+        if (!branch.branch_name.toLowerCase().includes('commission')) {
+            if (branchBal >= 0) {
+                posTotalBal += branchBal;
+                posTotalComm += branchComm;
+                posCount++;
+            } else {
+                negTotalBal += branchBal;
+                negTotalComm += branchComm;
+                negCount++;
+            }
+        }
+
+        if (branchTodayComm > 0) {
+            totalTodayCommission += branchTodayComm;
+
+            // Save to DailyCommission record
+            try {
+                await DailyCommission.findOneAndUpdate(
+                    { branch_id: branch._id, date: today },
+                    {
+                        branch_name: branch.branch_name,
+                        amount: branchTodayComm
+                    },
+                    { upsert: true, new: true }
+                );
+            } catch (error) {
+                console.error(`Error saving daily commission for branch ${branch.branch_name}:`, error);
+            }
+        }
+    });
+
+    await Promise.all(dailyEarningPromises);
+
+    // Save HO Leader Snapshot
+    const hoBalance = (posTotalBal + posTotalComm) + (negTotalBal + negTotalComm) - (posTotalComm + negTotalComm);
+    try {
+        await HOLeaderSnapshot.findOneAndUpdate(
+            { snapshot_date: today },
+            {
+                positive_total_balance: posTotalBal,
+                negative_total_balance: negTotalBal,
+                positive_total_commission: posTotalComm,
+                negative_total_commission: negTotalComm,
+                ho_balance: hoBalance,
+                positive_count: posCount,
+                negative_count: negCount
+            },
+            { upsert: true, new: true }
+        );
+    } catch (error) {
+        console.error("Error saving HO Leader Snapshot:", error);
+    }
+
+    if (totalTodayCommission > 0) {
+        // Find or create the COMMISSION branch
+        let commissionBranch = await Branch.findOne({ branch_name: "COMMISSION" });
+
+        if (!commissionBranch) {
+            commissionBranch = await Branch.create({
+                branch_name: "COMMISSION",
+                location: "HEAD OFFICE",
+                opening_balance: 0,
+                active: true
+            });
+        }
+
+        // Update its balance
+        await Branch.findByIdAndUpdate(commissionBranch._id, {
+            $inc: { opening_balance: totalTodayCommission }
+        });
+
+        // Reset today_commission for all branches
+        await Branch.updateMany({}, { today_commission: 0 });
+    }
+
+    return returnCode(res, 200, true, "Daily commission finalized and HO metrics saved successfully", {
+        total_commission: totalTodayCommission,
+        ho_balance: hoBalance
+    });
+});
 
 export {
     createAdmin,
@@ -1322,8 +1503,10 @@ export {
     triggerBranchSnapshot,
     getBranchSnapshots,
     getLatestSnapshots,
+    checkSchedulerHealth,
     createRelationShip,
     createTransaction,
     editTransaction,
-    getDateRangeReport
+    getDateRangeReport,
+    finalizeDailyCommission
 };

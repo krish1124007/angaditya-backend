@@ -23,10 +23,12 @@ import {
     triggerBranchSnapshot,
     getBranchSnapshots,
     getLatestSnapshots,
+    checkSchedulerHealth,
     createRelationShip,
     createTransaction,
     editTransaction,
-    getDateRangeReport
+    getDateRangeReport,
+    finalizeDailyCommission
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
 import { auth } from "../middlewares/auth.js";
@@ -60,6 +62,7 @@ router.route("/delete-all-transaction").post(auth, deleteAllTransactions);
 router.route("/trigger-snapshot").post(auth, triggerBranchSnapshot);
 router.route("/get-snapshots").post(auth, getBranchSnapshots);
 router.route("/get-latest-snapshots").get(auth, getLatestSnapshots);
+router.route("/check-scheduler-health").get(auth, checkSchedulerHealth);
 router.route("/create-relationship").post(auth, createRelationShip);
 router.route("/create-transaction").post(auth, createTransaction);
 router.route("/edit-transaction").post(auth, editTransaction);

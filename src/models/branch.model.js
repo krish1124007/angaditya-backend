@@ -33,4 +33,3 @@ const BranchSchema = new mongoose.Schema({
 },{timestaps:true})
 
 export const Branch = mongoose.model("Branch" , BranchSchema);
-
