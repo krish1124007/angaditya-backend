@@ -352,12 +352,12 @@ const getTodayTransactions = asyncHandler(async (req, res) => {
 /* ---------------------- BRANCH OPERATIONS ---------------------- */
 
 const createBranch = asyncHandler(async (req, res) => {
-    const { branch_name, location } = req.body;
+    const { branch_name, location , opening_balance } = req.body;
     if (!branch_name || !location) {
         return returnCode(res, 400, false, "All fields are required");
     }
 
-    const branch = await Branch.create({ branch_name, location });
+    const branch = await Branch.create({ branch_name, location , opening_balance });
 
     return returnCode(res, 200, true, "Branch created successfully", branch);
 });
