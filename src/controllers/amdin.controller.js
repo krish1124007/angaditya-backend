@@ -352,12 +352,12 @@ const getTodayTransactions = asyncHandler(async (req, res) => {
 /* ---------------------- BRANCH OPERATIONS ---------------------- */
 
 const createBranch = asyncHandler(async (req, res) => {
-    const { branch_name, location , opening_balance } = req.body;
+    const { branch_name, location, opening_balance } = req.body;
     if (!branch_name || !location) {
         return returnCode(res, 400, false, "All fields are required");
     }
 
-    const branch = await Branch.create({ branch_name, location , opening_balance });
+    const branch = await Branch.create({ branch_name, location, opening_balance });
 
     return returnCode(res, 200, true, "Branch created successfully", branch);
 });
@@ -1030,22 +1030,12 @@ const createTransaction = asyncHandler(async (req, res) => {
 const editTransaction = asyncHandler(async (req, res) => {
     const { transaction_id, update_data } = req.body;
 
-    // Validate transaction ID
-    if (!transaction_id) {
-        return returnCode(res, 400, false, "Transaction ID is required");
-    }
-
-    if(update_data.receiver_branch || update_data.sender_branch)
-    {
-        if(update_data.receiver_branch && update_data.sender_branch)
-        {
-            
-        }
-    }
-
-    // Validate update data
     if (!update_data || Object.keys(update_data).length === 0) {
         return returnCode(res, 400, false, "Update data is required");
+    }
+
+    if (!transaction_id) {
+        return returnCode(res, 400, false, "Transaction ID is required");
     }
 
     // Find the transaction
@@ -1053,6 +1043,74 @@ const editTransaction = asyncHandler(async (req, res) => {
 
     if (!transaction) {
         return returnCode(res, 404, false, "Transaction not found");
+    }
+
+    // Logic for Branch Changes (Only if Approved)
+    if (transaction.admin_permission && (update_data.receiver_branch || update_data.sender_branch)) {
+        const points = Number(decrypt_number(transaction.points));
+        const senderCommission = transaction.sender_commision || 0;
+        const receiverCommission = transaction.receiver_commision || 0;
+
+        // Check if transaction is from today for commission updates
+        const txDate = new Date(transaction.date);
+        const today = new Date();
+        const isToday = txDate.getDate() === today.getDate() &&
+            txDate.getMonth() === today.getMonth() &&
+            txDate.getFullYear() === today.getFullYear();
+
+        const promises = [];
+
+        // Handle Sender Change
+        if (update_data.sender_branch && update_data.sender_branch.toString() !== transaction.sender_branch.toString()) {
+
+            // Revert Old Sender (Reverse the +points and +commission adjustment made during approval)
+            // Wait, approval logic was: Opening += Points. 
+            // So Reversal is: Opening -= Points.
+            promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
+                $inc: {
+                    opening_balance: -points,
+                    commission: -senderCommission,
+                    today_commission: isToday ? -senderCommission : 0
+                }
+            }));
+
+            // Apply New Sender (Apply +points and +commission)
+            promises.push(Branch.findByIdAndUpdate(update_data.sender_branch, {
+                $inc: {
+                    opening_balance: points,
+                    commission: senderCommission,
+                    today_commission: isToday ? senderCommission : 0
+                }
+            }));
+        }
+
+        // Handle Receiver Change
+        if (update_data.receiver_branch && update_data.receiver_branch.toString() !== transaction.receiver_branch.toString()) {
+
+            // Revert Old Receiver (Reverse the -points adjustment made during approval)
+            // Approval logic: Opening -= Points.
+            // Reversal: Opening += Points.
+            promises.push(Branch.findByIdAndUpdate(transaction.receiver_branch, {
+                $inc: {
+                    opening_balance: points,
+                    commission: -receiverCommission,
+                    today_commission: isToday ? -receiverCommission : 0
+                }
+            }));
+
+            // Apply New Receiver (Apply -points and +commission)
+            promises.push(Branch.findByIdAndUpdate(update_data.receiver_branch, {
+                $inc: {
+                    opening_balance: -points,
+                    commission: receiverCommission,
+                    today_commission: isToday ? receiverCommission : 0
+                }
+            }));
+        }
+
+        if (promises.length > 0) {
+            await Promise.all(promises);
+        }
     }
 
     // Prepare update with encryption for sensitive fields
@@ -1518,3 +1576,5 @@ export {
     getDateRangeReport,
     finalizeDailyCommission
 };
+
+

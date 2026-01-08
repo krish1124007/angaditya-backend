@@ -263,6 +263,37 @@ const updateTrsactionDetail = asyncHandler(async (req, res) => {
 const deleteTransaction = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
+    const transaction = await Transaction.findById(id);
+
+    if (!transaction) {
+        return returnCode(res, 400, false, "Transaction not found", null);
+    }
+
+    if (transaction.admin_permission) {
+        const points = Number(decrypt_number(transaction.points));
+        const senderCommission = transaction.sender_commision || 0;
+        const receiverCommission = transaction.receiver_commision || 0;
+
+        await Promise.all([
+            Branch.findByIdAndUpdate(
+                transaction.sender_branch,
+                {
+                    $inc: {
+                        opening_balance: -points - senderCommission
+                    }
+                }
+            ),
+            Branch.findByIdAndUpdate(
+                transaction.receiver_branch,
+                {
+                    $inc: {
+                        opening_balance: points - receiverCommission
+                    }
+                }
+            )
+        ]);
+    }
+
     const deleteT = await Transaction.findByIdAndDelete(id);
 
     if (!deleteT) {
