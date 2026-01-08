@@ -31,6 +31,10 @@ const BranchSchema = new mongoose.Schema({
   transaction_balance: {
     type: Number,
     default: 0
+  },
+  remaining_transfer_commission:{
+    type:Number,
+    default:0
   }
 
 

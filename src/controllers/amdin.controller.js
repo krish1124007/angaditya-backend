@@ -668,7 +668,8 @@ const deleteTransaction = asyncHandler(async (req, res) => {
                         opening_balance: isToday ? 0 : -points,
                         transaction_balance: -points,
                         commission: -senderCommission,
-                        today_commission: -senderCommission
+                        today_commission: -senderCommission,
+                        remaining_transfer_commission: -senderCommission
                     }
                 }
             ),
@@ -679,7 +680,8 @@ const deleteTransaction = asyncHandler(async (req, res) => {
                         opening_balance: isToday ? 0 : points,
                         transaction_balance: points,
                         commission: -receiverCommission,
-                        today_commission: -receiverCommission
+                        today_commission: -receiverCommission,
+                        remaining_transfer_commission: -receiverCommission
                     }
                 }
             )
@@ -739,7 +741,8 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
                 $inc: {
                     transaction_balance: decrypt_number(transaction.points),
                     commission: c1,
-                    today_commission: c1
+                    today_commission: c1,
+                    remaining_transfer_commission: c1
                 }
             },
             { new: true }
@@ -750,7 +753,8 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
                 $inc: {
                     transaction_balance: -decrypt_number(transaction.points),
                     commission: c2,
-                    today_commission: c2
+                    today_commission: c2,
+                    remaining_transfer_commission: c2
                 }
             },
             { new: true }
@@ -1201,7 +1205,8 @@ const editTransaction = asyncHandler(async (req, res) => {
                 promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
                     $inc: {
                         commission: senderCommissionDiff,
-                        today_commission: isToday ? senderCommissionDiff : 0
+                        today_commission: isToday ? senderCommissionDiff : 0,
+                        remaining_transfer_commission: senderCommissionDiff
                     }
                 }));
 
@@ -1209,7 +1214,8 @@ const editTransaction = asyncHandler(async (req, res) => {
                 promises.push(Branch.findByIdAndUpdate(transaction.receiver_branch, {
                     $inc: {
                         commission: receiverCommissionDiff,
-                        today_commission: isToday ? receiverCommissionDiff : 0
+                        today_commission: isToday ? receiverCommissionDiff : 0,
+                        remaining_transfer_commission: receiverCommissionDiff
                     }
                 }));
 
@@ -1224,7 +1230,8 @@ const editTransaction = asyncHandler(async (req, res) => {
                 promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
                     $inc: {
                         commission: commissionDifference,
-                        today_commission: isToday ? commissionDifference : 0
+                        today_commission: isToday ? commissionDifference : 0,
+                        remaining_transfer_commission: commissionDifference
                     }
                 }));
 
@@ -1249,7 +1256,8 @@ const editTransaction = asyncHandler(async (req, res) => {
                     opening_balance: isToday ? 0 : -points,
                     transaction_balance: -points,
                     commission: -senderCommission,
-                    today_commission: isToday ? -senderCommission : 0
+                    today_commission: isToday ? -senderCommission : 0,
+                    remaining_transfer_commission: -senderCommission
                 }
             }));
 
@@ -1259,7 +1267,8 @@ const editTransaction = asyncHandler(async (req, res) => {
                     opening_balance: isToday ? 0 : points,
                     transaction_balance: points,
                     commission: senderCommission,
-                    today_commission: isToday ? senderCommission : 0
+                    today_commission: isToday ? senderCommission : 0,
+                    remaining_transfer_commission: senderCommission
                 }
             }));
         }
@@ -1272,7 +1281,8 @@ const editTransaction = asyncHandler(async (req, res) => {
                     opening_balance: isToday ? 0 : points,
                     transaction_balance: points,
                     commission: -receiverCommission,
-                    today_commission: isToday ? -receiverCommission : 0
+                    today_commission: isToday ? -receiverCommission : 0,
+                    remaining_transfer_commission: -receiverCommission
                 }
             }));
 
@@ -1282,7 +1292,8 @@ const editTransaction = asyncHandler(async (req, res) => {
                     opening_balance: isToday ? 0 : -points,
                     transaction_balance: -points,
                     commission: receiverCommission,
-                    today_commission: isToday ? receiverCommission : 0
+                    today_commission: isToday ? receiverCommission : 0,
+                    remaining_transfer_commission: receiverCommission
                 }
             }));
         }
@@ -1743,65 +1754,55 @@ const finalizeDailyCommission = asyncHandler(async (req, res) => {
  * Creates automatic transactions for each branch
  */
 const transferCommissions = asyncHandler(async (req, res) => {
-    // Get all branches except COMMISSION
+
     const branches = await Branch.find({
-        branch_name: { $ne: "commission" }
+        branch_name: { $ne: "commission" },
+        today_commission: { $gt: 0 }
     });
 
-    // Find or create COMMISSION branch
-    let commissionBranch = await Branch.findOne({ branch_name: "commission" });
-
+    const commissionBranch = await Branch.findOne({ branch_name: "commission" });
     if (!commissionBranch) {
-       return returnCode(res, 200, false, "Commission branch not found");
+        return returnCode(res, 404, false, "Commission branch not found");
     }
 
-    // Create transactions for each branch
-    const transactionPromises = branches.map(async (branch) => {
-        // Only create transaction if branch has today_commission > 0
-        if (branch.today_commission && branch.today_commission > 0) {
-            // Create transaction
-            const transaction = await Transaction.create({
-                sender_branch: branch._id,
-                receiver_branch: commissionBranch._id,
-                points: branch.today_commission,
-                commission: 0,
-                sender_name:"-",
-                sender_mobile: 0,
-                receiver_name: "-",
-                receiver_mobile: 0,
-                other_sender: "-",
-                other_receiver: "-",
-                admin_permission: true, // Auto-approve
-                status: true,
-                date: new Date(),
-                sender_commision: 0,
-                receiver_commision: 0
-            });
+    let totalTransferred = 0;
+    let createdTransactions = [];
 
-            // Update branch balances
-            await Promise.all([
-                // Sender branch: add points to transaction_balance
-                Branch.findByIdAndUpdate(branch._id, {
-                    $inc: {
-                        transaction_balance: branch.today_commission
-                    }
-                }),
-                // Receiver (COMMISSION) branch: subtract points from transaction_balance
-                Branch.findByIdAndUpdate(commissionBranch._id, {
-                    $inc: {
-                        transaction_balance: -branch.today_commission
-                    }
-                })
-            ]);
+    for (const branch of branches) {
 
-            return transaction;
-        }
-        return null;
-    });
+        const amount = branch.remaining_transfer_commission;
 
-    const createdTransactions = (await Promise.all(transactionPromises)).filter(t => t !== null);
+        const transaction = await Transaction.create({
+            sender_branch: branch._id,
+            receiver_branch: commissionBranch._id,
+            points: amount,
+            commission: 0,
+            sender_name: "-",
+            sender_mobile: 0,
+            receiver_name: "-",
+            receiver_mobile: 0,
+            other_sender: "-",
+            other_receiver: "-",
+            admin_permission: true,
+            status: true,
+            date: new Date(),
+            sender_commision: 0,
+            receiver_commision: 0
+        });
 
-    const totalTransferred = branches.reduce((sum, b) => sum + (b.today_commission || 0), 0);
+        await Promise.all([
+            Branch.findByIdAndUpdate(branch._id, {
+                $inc: { transaction_balance: amount },
+                $set: { remaining_transfer_commission: 0 } // ✅ reset immediately
+            }),
+            Branch.findByIdAndUpdate(commissionBranch._id, {
+                $inc: { transaction_balance: -amount }
+            })
+        ]);
+
+        totalTransferred += amount;
+        createdTransactions.push(transaction);
+    }
 
     return returnCode(res, 200, true, "Commissions transferred successfully", {
         transactions_created: createdTransactions.length,
@@ -1809,6 +1810,7 @@ const transferCommissions = asyncHandler(async (req, res) => {
         branches_processed: branches.length
     });
 });
+
 
 
 export {
