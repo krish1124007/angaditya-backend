@@ -630,225 +630,168 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
     const { transactions_id } = req.body;
 
     if (!transactions_id) {
-        return returnCode(res, 400, false, "Transaction ID is required");
+        return returnCode(res, 400, false, "Transaction id is required");
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    // Fetch transaction first
+    const transaction = await Transaction.findById(transactions_id);
 
-    try {
-        /* ---------------- Lock transaction (race-safe) ---------------- */
-        const transaction = await Transaction.findOneAndUpdate(
-            { _id: transactions_id, admin_permission: false },
-            {},
-            { new: true, session }
-        );
+    if (!transaction) {
+        return returnCode(res, 400, false, "Transaction not found");
+    }
 
-        if (!transaction) {
-            await session.abortTransaction();
-            return returnCode(res, 400, false, "Transaction not found or already approved");
-        }
+    // Check if already approved
+    if (transaction.admin_permission === true) {
+        return returnCode(res, 400, false, "Transaction already approved by admin");
+    }
 
-        /* ---------------- Decrypt & validate points ---------------- */
-        const points = decrypt_number(transaction.points);
+    // Calculate commissions based on custom relationship
+    const relationship = await CustomRelationship.findOne({
+        branch1_id: transaction.sender_branch,
+        branch2_id: transaction.receiver_branch
+    });
 
-        if (!points || points <= 0) {
-            await session.abortTransaction();
-            return returnCode(res, 400, false, "Invalid transaction points");
-        }
+    let c1 = transaction.commission;
+    let c2 = 0;
 
-        /* ---------------- Commission calculation ---------------- */
-        let senderCommission = transaction.commission;
-        let receiverCommission = 0;
+    if (relationship) {
+        c1 = c1 * relationship.branch1_commission / 100;
+        c2 = transaction.commission * relationship.branch2_commission / 100;
+    }
 
-        const relationship = await CustomRelationship.findOne(
-            {
-                branch1_id: transaction.sender_branch,
-                branch2_id: transaction.receiver_branch,
-            },
-            null,
-            { session }
-        );
-
-        if (relationship) {
-            senderCommission =
-                (transaction.commission * relationship.branch1_commission) / 100;
-
-            receiverCommission =
-                (transaction.commission * relationship.branch2_commission) / 100;
-        }
-
-        /* ---------------- Fetch branches ---------------- */
-        const senderBranch = await Branch.findById(
+    // Update branch balances and commissions
+    const [updateBranchOpeningBalance, updateReceiverOpeningBalance] = await Promise.all([
+        Branch.findByIdAndUpdate(
             transaction.sender_branch,
-            null,
-            { session }
-        );
-
-        const receiverBranch = await Branch.findById(
+            {
+                $inc: {
+                    opening_balance: decrypt_number(transaction.points),
+                    commission: c1,
+                    today_commission: c1
+                }
+            },
+            { new: true }
+        ),
+        Branch.findByIdAndUpdate(
             transaction.receiver_branch,
-            null,
-            { session }
-        );
+            {
+                $inc: {
+                    opening_balance: -decrypt_number(transaction.points),
+                    commission: c2,
+                    today_commission: c2
+                }
+            },
+            { new: true }
+        )
+    ]);
 
-        if (!senderBranch || !receiverBranch) {
-            throw new Error("Branch not found");
+    // Update transaction with admin permission and commissions
+    transaction.admin_permission = true;
+    transaction.sender_commision = c1;
+    transaction.receiver_commision = c2;
+    await transaction.save();
+
+    // Fetch enriched transaction with all fields including created_by_name
+    const tx = await Transaction.aggregate([
+        { $match: { _id: new mongoose.Types.ObjectId(transactions_id) } },
+
+        // Join sender branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "sender_branch",
+                foreignField: "_id",
+                as: "senderBranch",
+            },
+        },
+        { $unwind: { path: "$senderBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join receiver branch
+        {
+            $lookup: {
+                from: "branches",
+                localField: "receiver_branch",
+                foreignField: "_id",
+                as: "receiverBranch",
+            },
+        },
+        { $unwind: { path: "$receiverBranch", preserveNullAndEmptyArrays: true } },
+
+        // Join user who created the transaction
+        {
+            $lookup: {
+                from: "users",
+                localField: "create_by",
+                foreignField: "_id",
+                as: "creator",
+            },
+        },
+        { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
+
+        {
+            $project: {
+                // Original fields
+                _id: 1,
+                create_by: 1,
+                receiver_branch: 1,
+                sender_branch: 1,
+                points: 1,
+                receiver_name: 1,
+                receiver_mobile: 1,
+                sender_name: 1,
+                sender_mobile: 1,
+                status: 1,
+                stauts: 1,
+                admin_permission: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                __v: 1,
+
+                // Additional calculated fields
+                receiver_branch_name: "$receiverBranch.branch_name",
+                sender_branch_name: "$senderBranch.branch_name",
+                created_by_name: {
+                    $cond: {
+                        if: { $and: ["$creator", "$creator.username"] },
+                        then: "$creator.username",
+                        else: null
+                    }
+                }
+            },
+        },
+    ]);
+
+    const enrichedTx = tx[0];
+
+    /* decrypt fields */
+    enrichedTx.points = decrypt_number(transaction.points);
+    enrichedTx.receiver_name = decrypt_text(transaction.receiver_name);
+    enrichedTx.receiver_mobile = decrypt_number(transaction.receiver_mobile);
+    enrichedTx.sender_name = decrypt_text(transaction.sender_name);
+    enrichedTx.sender_mobile = decrypt_number(transaction.sender_mobile);
+
+    /* Notify */
+    try {
+        const users = await User.find({
+            branch: transaction.receiver_branch,
+            expoToken: { $exists: true, $ne: null },
+        });
+
+        const tokens = users.map((u) => u.expoToken);
+
+        if (tokens.length > 0) {
+            await sendExpoNotification(
+                tokens,
+                "Transaction Approved",
+                `A transaction of ${enrichedTx.points} points was created by ${enrichedTx.sender_branch_name} and sent to ${enrichedTx.receiver_branch_name}. It has been approved.`,
+                { transaction: enrichedTx }
+            );
         }
-
-        /* ---------------- Decrypt branch balances ---------------- */
-        const senderOpening = decrypt_number(senderBranch.opening_balance);
-        const receiverOpening = decrypt_number(receiverBranch.opening_balance);
-
-        const senderCommissionTotal = decrypt_number(senderBranch.commission);
-        const receiverCommissionTotal = decrypt_number(receiverBranch.commission);
-
-        const senderTodayCommission = decrypt_number(senderBranch.today_commission);
-        const receiverTodayCommission = decrypt_number(receiverBranch.today_commission);
-
-        /* ---------------- Calculate new balances ---------------- */
-        const newSenderOpening = senderOpening + points;
-        const newReceiverOpening = receiverOpening - points;
-
-        const newSenderCommission = senderCommissionTotal + senderCommission;
-        const newReceiverCommission = receiverCommissionTotal + receiverCommission;
-
-        const newSenderTodayCommission = senderTodayCommission + senderCommission;
-        const newReceiverTodayCommission = receiverTodayCommission + receiverCommission;
-
-        /* ---------------- Encrypt before saving ---------------- */
-        await Branch.findByIdAndUpdate(
-            senderBranch._id,
-            {
-                $set: {
-                    opening_balance: encrypt_number(newSenderOpening),
-                    commission: encrypt_number(newSenderCommission),
-                    today_commission: encrypt_number(newSenderTodayCommission),
-                },
-            },
-            { session }
-        );
-
-        await Branch.findByIdAndUpdate(
-            receiverBranch._id,
-            {
-                $set: {
-                    opening_balance: encrypt_number(newReceiverOpening),
-                    commission: encrypt_number(newReceiverCommission),
-                    today_commission: encrypt_number(newReceiverTodayCommission),
-                },
-            },
-            { session }
-        );
-
-        /* ---------------- Update transaction ---------------- */
-        transaction.admin_permission = true;
-        transaction.sender_commision = senderCommission;
-        transaction.receiver_commision = receiverCommission;
-        transaction.approved_at = new Date();
-        transaction.approved_by = req.user?._id || null;
-
-        await transaction.save({ session });
-
-        /* ---------------- Commit atomic transaction ---------------- */
-        await session.commitTransaction();
-        session.endSession();
-
-        /* ---------------- Enrich transaction ---------------- */
-        const tx = await Transaction.aggregate([
-            { $match: { _id: new mongoose.Types.ObjectId(transactions_id) } },
-
-            {
-                $lookup: {
-                    from: "branches",
-                    localField: "sender_branch",
-                    foreignField: "_id",
-                    as: "senderBranch",
-                },
-            },
-            { $unwind: "$senderBranch" },
-
-            {
-                $lookup: {
-                    from: "branches",
-                    localField: "receiver_branch",
-                    foreignField: "_id",
-                    as: "receiverBranch",
-                },
-            },
-            { $unwind: "$receiverBranch" },
-
-            {
-                $lookup: {
-                    from: "users",
-                    localField: "create_by",
-                    foreignField: "_id",
-                    as: "creator",
-                },
-            },
-            { $unwind: { path: "$creator", preserveNullAndEmptyArrays: true } },
-
-            {
-                $project: {
-                    _id: 1,
-                    points: 1,
-                    receiver_name: 1,
-                    receiver_mobile: 1,
-                    sender_name: 1,
-                    sender_mobile: 1,
-                    admin_permission: 1,
-                    createdAt: 1,
-
-                    sender_branch_name: "$senderBranch.branch_name",
-                    receiver_branch_name: "$receiverBranch.branch_name",
-                    created_by_name: "$creator.username",
-                },
-            },
-        ]);
-
-        const enrichedTx = tx[0];
-
-        /* ---------------- Decrypt response ---------------- */
-        enrichedTx.points = decrypt_number(enrichedTx.points);
-        enrichedTx.receiver_name = decrypt_text(enrichedTx.receiver_name);
-        enrichedTx.receiver_mobile = decrypt_number(enrichedTx.receiver_mobile);
-        enrichedTx.sender_name = decrypt_text(enrichedTx.sender_name);
-        enrichedTx.sender_mobile = decrypt_number(enrichedTx.sender_mobile);
-
-        /* ---------------- Notification (non-blocking) ---------------- */
-        try {
-            const users = await User.find({
-                branch: transaction.receiver_branch,
-                expoToken: { $exists: true, $ne: null },
-            });
-
-            const tokens = users.map((u) => u.expoToken);
-
-            if (tokens.length > 0) {
-                await sendExpoNotification(
-                    tokens,
-                    "Transaction Approved",
-                    `A transaction of ${enrichedTx.points} points was approved.`,
-                    { transaction: enrichedTx }
-                );
-            }
-        } catch (err) {
-            console.error("Notification error:", err.message);
-        }
-
-        return returnCode(
-            res,
-            200,
-            true,
-            "Transaction permission granted successfully",
-            enrichedTx
-        );
-    } catch (error) {
-        await session.abortTransaction();
-        session.endSession();
-
-        console.error("Approval error:", error.message);
-        return returnCode(res, 500, false, "Transaction approval failed");
+    } catch (err) {
+        console.log("Notification error:", err);
     }
+
+    return returnCode(res, 200, true, "Permission granted successfully", enrichedTx);
 });
 
 /* ---------------------- ACCESS LOGS ---------------------- */
@@ -1096,7 +1039,7 @@ const editTransaction = asyncHandler(async (req, res) => {
     {
         if(update_data.receiver_branch && update_data.sender_branch)
         {
-
+            
         }
     }
 
