@@ -1138,7 +1138,8 @@ const editTransaction = asyncHandler(async (req, res) => {
             // So Reversal is: Opening -= Points.
             promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
                 $inc: {
-                    opening_balance: -points,
+                    opening_balance: isToday? 0 : -points,
+                    transaction_balance : -points,
                     commission: -senderCommission,
                     today_commission: isToday ? -senderCommission : 0
                 }
@@ -1147,7 +1148,8 @@ const editTransaction = asyncHandler(async (req, res) => {
             // Apply New Sender (Apply +points and +commission)
             promises.push(Branch.findByIdAndUpdate(update_data.sender_branch, {
                 $inc: {
-                    opening_balance: points,
+                    opening_balance: isToday? 0 : points,
+                    transaction_balance : points,
                     commission: senderCommission,
                     today_commission: isToday ? senderCommission : 0
                 }
@@ -1162,7 +1164,8 @@ const editTransaction = asyncHandler(async (req, res) => {
             // Reversal: Opening += Points.
             promises.push(Branch.findByIdAndUpdate(transaction.receiver_branch, {
                 $inc: {
-                    opening_balance: points,
+                    opening_balance: isToday? 0 : points,
+                    transaction_balance : points,
                     commission: -receiverCommission,
                     today_commission: isToday ? -receiverCommission : 0
                 }
@@ -1171,7 +1174,8 @@ const editTransaction = asyncHandler(async (req, res) => {
             // Apply New Receiver (Apply -points and +commission)
             promises.push(Branch.findByIdAndUpdate(update_data.receiver_branch, {
                 $inc: {
-                    opening_balance: -points,
+                    opening_balance: isToday? 0 : -points,
+                    transaction_balance : -points,
                     commission: receiverCommission,
                     today_commission: isToday ? receiverCommission : 0
                 }
