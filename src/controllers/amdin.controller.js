@@ -665,8 +665,8 @@ const deleteTransaction = asyncHandler(async (req, res) => {
                 transaction.sender_branch,
                 {
                     $inc: {
-                        opening_balance : isToday? 0 : -points,
-                        transaction_balance : -points,
+                        opening_balance: isToday ? 0 : -points,
+                        transaction_balance: -points,
                         commission: -senderCommission,
                         today_commission: -senderCommission
                     }
@@ -676,8 +676,8 @@ const deleteTransaction = asyncHandler(async (req, res) => {
                 transaction.receiver_branch,
                 {
                     $inc: {
-                        opening_balance : isToday? 0 : points,
-                        transaction_balance : points,
+                        opening_balance: isToday ? 0 : points,
+                        transaction_balance: points,
                         commission: -receiverCommission,
                         today_commission: -receiverCommission
                     }
@@ -1117,41 +1117,147 @@ const editTransaction = asyncHandler(async (req, res) => {
         return returnCode(res, 404, false, "Transaction not found");
     }
 
-    // Logic for Branch Changes (Only if Approved)
+    // Check if transaction is from today
+    const txDate = new Date(transaction.date);
+    const today = new Date();
+    const isToday = txDate.getDate() === today.getDate() &&
+        txDate.getMonth() === today.getMonth() &&
+        txDate.getFullYear() === today.getFullYear();
+
+    const promises = [];
+
+    // ==================== HANDLE POINTS CHANGE ====================
+    if (update_data.points && transaction.admin_permission) {
+        const oldPoints = Number(decrypt_number(transaction.points));
+        const newPoints = Number(update_data.points);
+        const pointsDifference = newPoints - oldPoints;
+
+        if (pointsDifference !== 0) {
+            // Update Sender Branch: Add the difference to transaction_balance (and opening_balance if not today)
+            promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
+                $inc: {
+                    transaction_balance: pointsDifference,
+                    opening_balance: isToday ? 0 : pointsDifference
+                }
+            }));
+
+            // Update Receiver Branch: Subtract the difference from transaction_balance (and opening_balance if not today)
+            // Note: If difference is negative, subtracting a negative becomes addition (which is correct)
+            promises.push(Branch.findByIdAndUpdate(transaction.receiver_branch, {
+                $inc: {
+                    transaction_balance: -pointsDifference,
+                    opening_balance: isToday ? 0 : -pointsDifference
+                }
+            }));
+        }
+    }
+
+    // ==================== HANDLE COMMISSION CHANGE ====================
+    if (update_data.commission !== undefined && transaction.admin_permission) {
+        const oldCommission = transaction.commission || 0;
+        const newCommission = Number(update_data.commission);
+        const commissionDifference = newCommission - oldCommission;
+
+        if (commissionDifference !== 0) {
+            // Check if there's a relationship between sender and receiver branches
+            const relationship = await CustomRelationship.findOne({
+                $or: [
+                    { branch1_id: transaction.sender_branch, branch2_id: transaction.receiver_branch },
+                    { branch1_id: transaction.receiver_branch, branch2_id: transaction.sender_branch }
+                ]
+            });
+
+            if (relationship) {
+                // Relationship exists - split commission
+                let senderCommissionDiff = 0;
+                let receiverCommissionDiff = 0;
+
+                // Determine which branch is which in the relationship
+                if (relationship.branch1_id.toString() === transaction.sender_branch.toString()) {
+                    // Sender is branch1, Receiver is branch2
+                    const totalRelCommission = relationship.branch1_commission + relationship.branch2_commission;
+                    if (totalRelCommission > 0) {
+                        senderCommissionDiff = (commissionDifference * relationship.branch1_commission) / totalRelCommission;
+                        receiverCommissionDiff = (commissionDifference * relationship.branch2_commission) / totalRelCommission;
+                    } else {
+                        // Equal split if no commission defined
+                        senderCommissionDiff = commissionDifference / 2;
+                        receiverCommissionDiff = commissionDifference / 2;
+                    }
+                } else {
+                    // Sender is branch2, Receiver is branch1
+                    const totalRelCommission = relationship.branch1_commission + relationship.branch2_commission;
+                    if (totalRelCommission > 0) {
+                        senderCommissionDiff = (commissionDifference * relationship.branch2_commission) / totalRelCommission;
+                        receiverCommissionDiff = (commissionDifference * relationship.branch1_commission) / totalRelCommission;
+                    } else {
+                        // Equal split if no commission defined
+                        senderCommissionDiff = commissionDifference / 2;
+                        receiverCommissionDiff = commissionDifference / 2;
+                    }
+                }
+
+                // Update sender branch commission
+                promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
+                    $inc: {
+                        commission: senderCommissionDiff,
+                        today_commission: isToday ? senderCommissionDiff : 0
+                    }
+                }));
+
+                // Update receiver branch commission
+                promises.push(Branch.findByIdAndUpdate(transaction.receiver_branch, {
+                    $inc: {
+                        commission: receiverCommissionDiff,
+                        today_commission: isToday ? receiverCommissionDiff : 0
+                    }
+                }));
+
+                // Update transaction's sender and receiver commission fields
+                const oldSenderCommission = transaction.sender_commision || 0;
+                const oldReceiverCommission = transaction.receiver_commision || 0;
+
+                update_data.sender_commision = oldSenderCommission + senderCommissionDiff;
+                update_data.receiver_commision = oldReceiverCommission + receiverCommissionDiff;
+            } else {
+                // No relationship - commission goes entirely to sender branch
+                promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
+                    $inc: {
+                        commission: commissionDifference,
+                        today_commission: isToday ? commissionDifference : 0
+                    }
+                }));
+
+                // Update transaction's sender commission
+                const oldSenderCommission = transaction.sender_commision || 0;
+                update_data.sender_commision = oldSenderCommission + commissionDifference;
+            }
+        }
+    }
+
+    // ==================== HANDLE BRANCH CHANGES ====================
     if (transaction.admin_permission && (update_data.receiver_branch || update_data.sender_branch)) {
         const points = Number(decrypt_number(transaction.points));
         const senderCommission = transaction.sender_commision || 0;
         const receiverCommission = transaction.receiver_commision || 0;
 
-        // Check if transaction is from today for commission updates
-        const txDate = new Date(transaction.date);
-        const today = new Date();
-        const isToday = txDate.getDate() === today.getDate() &&
-            txDate.getMonth() === today.getMonth() &&
-            txDate.getFullYear() === today.getFullYear();
-
-        const promises = [];
-
         // Handle Sender Change
         if (update_data.sender_branch && update_data.sender_branch.toString() !== transaction.sender_branch.toString()) {
-
-            // Revert Old Sender (Reverse the +points and +commission adjustment made during approval)
-            // Wait, approval logic was: Opening += Points. 
-            // So Reversal is: Opening -= Points.
+            // Revert Old Sender
             promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
                 $inc: {
-                    opening_balance: isToday? 0 : -points,
-                    transaction_balance : -points,
+                    opening_balance: isToday ? 0 : -points,
+                    transaction_balance: -points,
                     commission: -senderCommission,
                     today_commission: isToday ? -senderCommission : 0
                 }
             }));
 
-            // Apply New Sender (Apply +points and +commission)
+            // Apply New Sender
             promises.push(Branch.findByIdAndUpdate(update_data.sender_branch, {
                 $inc: {
-                    opening_balance: isToday? 0 : points,
-                    transaction_balance : points,
+                    opening_balance: isToday ? 0 : points,
+                    transaction_balance: points,
                     commission: senderCommission,
                     today_commission: isToday ? senderCommission : 0
                 }
@@ -1160,33 +1266,31 @@ const editTransaction = asyncHandler(async (req, res) => {
 
         // Handle Receiver Change
         if (update_data.receiver_branch && update_data.receiver_branch.toString() !== transaction.receiver_branch.toString()) {
-
-            // Revert Old Receiver (Reverse the -points adjustment made during approval)
-            // Approval logic: Opening -= Points.
-            // Reversal: Opening += Points.
+            // Revert Old Receiver
             promises.push(Branch.findByIdAndUpdate(transaction.receiver_branch, {
                 $inc: {
-                    opening_balance: isToday? 0 : points,
-                    transaction_balance : points,
+                    opening_balance: isToday ? 0 : points,
+                    transaction_balance: points,
                     commission: -receiverCommission,
                     today_commission: isToday ? -receiverCommission : 0
                 }
             }));
 
-            // Apply New Receiver (Apply -points and +commission)
+            // Apply New Receiver
             promises.push(Branch.findByIdAndUpdate(update_data.receiver_branch, {
                 $inc: {
-                    opening_balance: isToday? 0 : -points,
-                    transaction_balance : -points,
+                    opening_balance: isToday ? 0 : -points,
+                    transaction_balance: -points,
                     commission: receiverCommission,
                     today_commission: isToday ? receiverCommission : 0
                 }
             }));
         }
+    }
 
-        if (promises.length > 0) {
-            await Promise.all(promises);
-        }
+    // Execute all branch updates
+    if (promises.length > 0) {
+        await Promise.all(promises);
     }
 
     // Prepare update with encryption for sensitive fields
@@ -1228,6 +1332,7 @@ const editTransaction = asyncHandler(async (req, res) => {
 
     return returnCode(res, 200, true, "Transaction updated successfully", enrichedTransaction || updatedTransaction);
 });
+
 
 
 
