@@ -29,7 +29,8 @@ import {
     editTransaction,
     getDateRangeReport,
     deleteTransaction,
-    finalizeDailyCommission
+    finalizeDailyCommission,
+    transferCommissions
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
 import { auth } from "../middlewares/auth.js";
@@ -68,5 +69,6 @@ router.route("/create-relationship").post(auth, createRelationShip);
 router.route("/create-transaction").post(auth, createTransaction);
 router.route("/edit-transaction").post(auth, editTransaction);
 router.route("/get-date-range-report").post(auth, getDateRangeReport);
+router.route("/transfer-commissions").post(auth, transferCommissions);
 
 export const admin_router = router;

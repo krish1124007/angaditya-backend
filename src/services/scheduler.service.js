@@ -4,7 +4,7 @@ import { BranchSnapshot } from "../models/branch-snapshot.model.js";
 
 /**
  * Creates daily snapshots of all active branches
- * Snapshot is created for the PREVIOUS day
+ * Snapshot is created for the CURRENT day at 11:59 PM
  */
 const createDailyBranchSnapshots = async () => {
   try {
@@ -17,9 +17,8 @@ const createDailyBranchSnapshots = async () => {
       return;
     }
 
-    // ✅ Snapshot date = YESTERDAY (safe & correct)
+    // ✅ Snapshot date = TODAY (since we run at 11:59 PM, end of day)
     const snapshotDate = new Date();
-    snapshotDate.setDate(snapshotDate.getDate() - 1);
     snapshotDate.setHours(0, 0, 0, 0);
 
     let successCount = 0;
@@ -73,10 +72,10 @@ const createDailyBranchSnapshots = async () => {
 
 /**
  * Initializes cron scheduler
- * Runs every day at 12:00 AM IST
+ * Runs every day at 11:59 PM IST
  */
 export const initScheduler = () => {
-  const cronExpression = "0 0 * * *"; // minute hour day month weekday
+  const cronExpression = "59 23 * * *"; // Run at 11:59 PM every day
 
   const dailyTask = cron.schedule(
     cronExpression,
@@ -116,7 +115,7 @@ export const initScheduler = () => {
   );
 
   console.log("✅ Scheduler initialized successfully");
-  console.log("⏰ Runs daily at 12:00 AM IST");
+  console.log("⏰ Runs daily at 11:59 PM IST");
   console.log("❤️ Heartbeat every hour");
 
   return { dailyTask, heartbeatTask };

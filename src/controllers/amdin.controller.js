@@ -1738,6 +1738,79 @@ const finalizeDailyCommission = asyncHandler(async (req, res) => {
     });
 });
 
+/**
+ * Transfer all today's commissions to COMMISSION branch
+ * Creates automatic transactions for each branch
+ */
+const transferCommissions = asyncHandler(async (req, res) => {
+    // Get all branches except COMMISSION
+    const branches = await Branch.find({
+        branch_name: { $ne: "commission" }
+    });
+
+    // Find or create COMMISSION branch
+    let commissionBranch = await Branch.findOne({ branch_name: "commission" });
+
+    if (!commissionBranch) {
+       return returnCode(res, 200, false, "Commission branch not found");
+    }
+
+    // Create transactions for each branch
+    const transactionPromises = branches.map(async (branch) => {
+        // Only create transaction if branch has today_commission > 0
+        if (branch.today_commission && branch.today_commission > 0) {
+            // Create transaction
+            const transaction = await Transaction.create({
+                sender_branch: branch._id,
+                receiver_branch: commissionBranch._id,
+                points: branch.today_commission,
+                commission: 0,
+                sender_name:"-",
+                sender_mobile: 0,
+                receiver_name: "-",
+                receiver_mobile: 0,
+                other_sender: "-",
+                other_receiver: "-",
+                admin_permission: true, // Auto-approve
+                status: true,
+                date: new Date(),
+                sender_commision: 0,
+                receiver_commision: 0
+            });
+
+            // Update branch balances
+            await Promise.all([
+                // Sender branch: add points to transaction_balance
+                Branch.findByIdAndUpdate(branch._id, {
+                    $inc: {
+                        transaction_balance: branch.today_commission
+                    }
+                }),
+                // Receiver (COMMISSION) branch: subtract points from transaction_balance
+                Branch.findByIdAndUpdate(commissionBranch._id, {
+                    $inc: {
+                        transaction_balance: -branch.today_commission
+                    }
+                })
+            ]);
+
+            return transaction;
+        }
+        return null;
+    });
+
+    const createdTransactions = (await Promise.all(transactionPromises)).filter(t => t !== null);
+
+    const totalTransferred = branches.reduce((sum, b) => sum + (b.today_commission || 0), 0);
+
+    return returnCode(res, 200, true, "Commissions transferred successfully", {
+        transactions_created: createdTransactions.length,
+        total_amount: totalTransferred,
+        branches_processed: branches.length
+    });
+});
+
+
 export {
     createAdmin,
     loginAdmin,
@@ -1769,7 +1842,8 @@ export {
     editTransaction,
     deleteTransaction,
     getDateRangeReport,
-    finalizeDailyCommission
+    finalizeDailyCommission,
+    transferCommissions
 };
 
 
