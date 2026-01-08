@@ -619,6 +619,55 @@ const getTrasactionBranchWise = asyncHandler(async (req, res) => {
     return returnCode(res, 200, true, message, transactions);
 });
 
+
+
+const deleteTransaction = asyncHandler(async (req, res) => {
+    const { id } = req.body;
+
+    if (!id) {
+        return returnCode(res, 400, false, "Transaction ID is required");
+    }
+
+    const transaction = await Transaction.findById(id);
+
+    if (!transaction) {
+        return returnCode(res, 404, false, "Transaction not found");
+    }
+
+    if (transaction.admin_permission) {
+        const points = Number(decrypt_number(transaction.points));
+        const senderCommission = transaction.sender_commision || 0;
+        const receiverCommission = transaction.receiver_commision || 0;
+
+        await Promise.all([
+            Branch.findByIdAndUpdate(
+                transaction.sender_branch,
+                {
+                    $inc: {
+                        opening_balance: -points,
+                        commission: -senderCommission,
+                        today_commission: -senderCommission
+                    }
+                }
+            ),
+            Branch.findByIdAndUpdate(
+                transaction.receiver_branch,
+                {
+                    $inc: {
+                        opening_balance: points,
+                        commission: -receiverCommission,
+                        today_commission: -receiverCommission
+                    }
+                }
+            )
+        ]);
+    }
+
+    await Transaction.findByIdAndDelete(id);
+
+    return returnCode(res, 200, true, "Transaction deleted successfully");
+});
+
 const deleteAllTransactions = asyncHandler(async (req, res) => {
     await Transaction.deleteMany({});
     return returnCode(res, 200, true, "All transactions deleted");
@@ -1573,6 +1622,7 @@ export {
     createRelationShip,
     createTransaction,
     editTransaction,
+    deleteTransaction,
     getDateRangeReport,
     finalizeDailyCommission
 };
