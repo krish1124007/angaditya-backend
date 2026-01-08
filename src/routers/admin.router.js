@@ -28,6 +28,7 @@ import {
     createTransaction,
     editTransaction,
     getDateRangeReport,
+    deleteTransaction,
     finalizeDailyCommission
 } from "../controllers/amdin.controller.js";
 import { Router } from "express";
@@ -57,7 +58,7 @@ router.route("/delete-all-user").post(auth, deleteAllUser);
 router.route("/delete-user").post(auth, deleteUser);
 router.route("/update-user").post(auth, updateUser);
 router.route("/delete-all-transaction").post(auth, deleteAllTransactions);
-
+router.route("/delete-transaction").post(auth, deleteTransaction);
 // Branch Snapshot Routes
 router.route("/trigger-snapshot").post(auth, triggerBranchSnapshot);
 router.route("/get-snapshots").post(auth, getBranchSnapshots);
