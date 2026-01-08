@@ -658,14 +658,15 @@ const deleteTransaction = asyncHandler(async (req, res) => {
 
         // If today: update transaction_balance (revert changes)
         // If past: update opening_balance (as requested)
-        const balanceField = isToday ? 'transaction_balance' : 'opening_balance';
+        // const balanceField = isToday ? 'transaction_balance' : 'opening_balance';
 
         await Promise.all([
             Branch.findByIdAndUpdate(
                 transaction.sender_branch,
                 {
                     $inc: {
-                        [balanceField]: -points,
+                        opening_balance : isToday? 0 : -points,
+                        transaction_balance : -points,
                         commission: -senderCommission,
                         today_commission: -senderCommission
                     }
@@ -675,7 +676,8 @@ const deleteTransaction = asyncHandler(async (req, res) => {
                 transaction.receiver_branch,
                 {
                     $inc: {
-                        [balanceField]: points,
+                        opening_balance : isToday? 0 : points,
+                        transaction_balance : points,
                         commission: -receiverCommission,
                         today_commission: -receiverCommission
                     }
