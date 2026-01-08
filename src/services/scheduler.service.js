@@ -36,9 +36,15 @@ const createDailyBranchSnapshots = async () => {
         });
 
         // ✅ Reset today's commission AFTER snapshot
+        // ✅ Sync Opening Balance = Transaction Balance (As per client requirement)
         await Branch.updateOne(
           { _id: branch._id },
-          { $set: { today_commission: 0 } }
+          {
+            $set: {
+              today_commission: 0,
+              opening_balance: branch.transaction_balance || branch.opening_balance // Fallback to opening if transaction_balance is not set yet
+            }
+          }
         );
 
         console.log(`✅ Snapshot created: ${branch.branch_name}`);

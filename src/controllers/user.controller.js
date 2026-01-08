@@ -274,12 +274,21 @@ const deleteTransaction = asyncHandler(async (req, res) => {
         const senderCommission = transaction.sender_commision || 0;
         const receiverCommission = transaction.receiver_commision || 0;
 
+        // Check if transaction is from today or past
+        const txDate = new Date(transaction.date);
+        const today = new Date();
+        const isToday = txDate.getDate() === today.getDate() &&
+            txDate.getMonth() === today.getMonth() &&
+            txDate.getFullYear() === today.getFullYear();
+
+        const balanceField = isToday ? 'transaction_balance' : 'opening_balance';
+
         await Promise.all([
             Branch.findByIdAndUpdate(
                 transaction.sender_branch,
                 {
                     $inc: {
-                        opening_balance: -points - senderCommission
+                        [balanceField]: -points - senderCommission
                     }
                 }
             ),
@@ -287,7 +296,7 @@ const deleteTransaction = asyncHandler(async (req, res) => {
                 transaction.receiver_branch,
                 {
                     $inc: {
-                        opening_balance: points - receiverCommission
+                        [balanceField]: points - receiverCommission
                     }
                 }
             )

@@ -357,7 +357,12 @@ const createBranch = asyncHandler(async (req, res) => {
         return returnCode(res, 400, false, "All fields are required");
     }
 
-    const branch = await Branch.create({ branch_name, location, opening_balance });
+    const branch = await Branch.create({
+        branch_name,
+        location,
+        opening_balance,
+        transaction_balance: opening_balance // Initialize transaction_balance = opening_balance
+    });
 
     return returnCode(res, 200, true, "Branch created successfully", branch);
 });
@@ -365,6 +370,11 @@ const createBranch = asyncHandler(async (req, res) => {
 const updateBranch = asyncHandler(async (req, res) => {
     const { _id, new_data } = req.body;
     if (!_id) return returnCode(res, 400, false, "Branch id is required");
+
+    // If opening_balance is being updated, sync transaction_balance
+    if (new_data.opening_balance !== undefined) {
+        new_data.transaction_balance = new_data.opening_balance;
+    }
 
     const branch = await Branch.findByIdAndUpdate(_id, new_data, { new: true });
 
@@ -639,12 +649,23 @@ const deleteTransaction = asyncHandler(async (req, res) => {
         const senderCommission = transaction.sender_commision || 0;
         const receiverCommission = transaction.receiver_commision || 0;
 
+        // Check if transaction is from today or past
+        const txDate = new Date(transaction.date);
+        const today = new Date();
+        const isToday = txDate.getDate() === today.getDate() &&
+            txDate.getMonth() === today.getMonth() &&
+            txDate.getFullYear() === today.getFullYear();
+
+        // If today: update transaction_balance (revert changes)
+        // If past: update opening_balance (as requested)
+        const balanceField = isToday ? 'transaction_balance' : 'opening_balance';
+
         await Promise.all([
             Branch.findByIdAndUpdate(
                 transaction.sender_branch,
                 {
                     $inc: {
-                        opening_balance: -points,
+                        [balanceField]: -points,
                         commission: -senderCommission,
                         today_commission: -senderCommission
                     }
@@ -654,7 +675,7 @@ const deleteTransaction = asyncHandler(async (req, res) => {
                 transaction.receiver_branch,
                 {
                     $inc: {
-                        opening_balance: points,
+                        [balanceField]: points,
                         commission: -receiverCommission,
                         today_commission: -receiverCommission
                     }
@@ -708,13 +729,13 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
         c2 = transaction.commission * relationship.branch2_commission / 100;
     }
 
-    // Update branch balances and commissions
+    // Update branch balances and commissions - using transaction_balance for live updates
     const [updateBranchOpeningBalance, updateReceiverOpeningBalance] = await Promise.all([
         Branch.findByIdAndUpdate(
             transaction.sender_branch,
             {
                 $inc: {
-                    opening_balance: decrypt_number(transaction.points),
+                    transaction_balance: decrypt_number(transaction.points),
                     commission: c1,
                     today_commission: c1
                 }
@@ -725,7 +746,7 @@ const giveTheTractionPermision = asyncHandler(async (req, res) => {
             transaction.receiver_branch,
             {
                 $inc: {
-                    opening_balance: -decrypt_number(transaction.points),
+                    transaction_balance: -decrypt_number(transaction.points),
                     commission: c2,
                     today_commission: c2
                 }
@@ -1583,9 +1604,22 @@ const finalizeDailyCommission = asyncHandler(async (req, res) => {
             $inc: { opening_balance: totalTodayCommission }
         });
 
-        // Reset today_commission for all branches
-        await Branch.updateMany({}, { today_commission: 0 });
     }
+
+    // Finalize logic: Sync opening_balance = transaction_balance for ALL branches
+    // We already have 'branches' array from line 1494
+    const syncBalancePromises = branches.map(async (branch) => {
+        if (branch.transaction_balance !== undefined) {
+            await Branch.findByIdAndUpdate(branch._id, {
+                opening_balance: branch.transaction_balance
+            });
+        }
+    });
+
+    await Promise.all(syncBalancePromises);
+
+    // Reset today_commission for all branches
+    await Branch.updateMany({}, { today_commission: 0 });
 
     return returnCode(res, 200, true, "Daily commission finalized and HO metrics saved successfully", {
         total_commission: totalTodayCommission,
