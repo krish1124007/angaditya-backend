@@ -1756,8 +1756,7 @@ const finalizeDailyCommission = asyncHandler(async (req, res) => {
 const transferCommissions = asyncHandler(async (req, res) => {
 
     const branches = await Branch.find({
-        branch_name: { $ne: "commission" },
-        today_commission: { $gt: 0 }
+        branch_name: { $ne: "commission" }
     });
 
     const commissionBranch = await Branch.findOne({ branch_name: "commission" });
