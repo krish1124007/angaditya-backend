@@ -182,7 +182,12 @@ const updateTransaction = asyncHandler(async (req, res) => {
 
 const updateTrsactionDetail = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const updateData = req.body;
+    const update_data = req.body;
+
+    // Validate update data
+    if (!update_data || Object.keys(update_data).length === 0) {
+        return returnCode(res, 400, false, "Update data is required", null);
+    }
 
     // Validate transaction ID
     if (!id) {
@@ -196,8 +201,190 @@ const updateTrsactionDetail = asyncHandler(async (req, res) => {
         return returnCode(res, 404, false, "Transaction not found", null);
     }
 
+    // Check if transaction is from today
+    const txDate = new Date(transaction.date);
+    const today = new Date();
+    const isToday = txDate.getDate() === today.getDate() &&
+        txDate.getMonth() === today.getMonth() &&
+        txDate.getFullYear() === today.getFullYear();
+
+    const promises = [];
+
+    // ==================== HANDLE POINTS CHANGE ====================
+    if (update_data.points && transaction.admin_permission) {
+        const oldPoints = Number(decrypt_number(transaction.points));
+        const newPoints = Number(update_data.points);
+        const pointsDifference = newPoints - oldPoints;
+
+        if (pointsDifference !== 0) {
+            // Update Sender Branch: Add the difference to transaction_balance (and opening_balance if not today)
+            promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
+                $inc: {
+                    transaction_balance: pointsDifference,
+                    opening_balance: isToday ? 0 : pointsDifference
+                }
+            }));
+
+            // Update Receiver Branch: Subtract the difference from transaction_balance (and opening_balance if not today)
+            promises.push(Branch.findByIdAndUpdate(transaction.receiver_branch, {
+                $inc: {
+                    transaction_balance: -pointsDifference,
+                    opening_balance: isToday ? 0 : -pointsDifference
+                }
+            }));
+        }
+    }
+
+    // ==================== HANDLE COMMISSION CHANGE ====================
+    if (update_data.commission !== undefined && transaction.admin_permission) {
+        const oldCommission = transaction.commission || 0;
+        const newCommission = Number(update_data.commission);
+        const commissionDifference = newCommission - oldCommission;
+
+        if (commissionDifference !== 0) {
+            // Check if there's a relationship between sender and receiver branches
+            const relationship = await CustomRelationship.findOne({
+                $or: [
+                    { branch1_id: transaction.sender_branch, branch2_id: transaction.receiver_branch },
+                    { branch1_id: transaction.receiver_branch, branch2_id: transaction.sender_branch }
+                ]
+            });
+
+            if (relationship) {
+                // Relationship exists - split commission
+                let senderCommissionDiff = 0;
+                let receiverCommissionDiff = 0;
+
+                // Determine which branch is which in the relationship
+                if (relationship.branch1_id.toString() === transaction.sender_branch.toString()) {
+                    // Sender is branch1, Receiver is branch2
+                    const totalRelCommission = relationship.branch1_commission + relationship.branch2_commission;
+                    if (totalRelCommission > 0) {
+                        senderCommissionDiff = (commissionDifference * relationship.branch1_commission) / totalRelCommission;
+                        receiverCommissionDiff = (commissionDifference * relationship.branch2_commission) / totalRelCommission;
+                    } else {
+                        // Equal split if no commission defined
+                        senderCommissionDiff = commissionDifference / 2;
+                        receiverCommissionDiff = commissionDifference / 2;
+                    }
+                } else {
+                    // Sender is branch2, Receiver is branch1
+                    const totalRelCommission = relationship.branch1_commission + relationship.branch2_commission;
+                    if (totalRelCommission > 0) {
+                        senderCommissionDiff = (commissionDifference * relationship.branch2_commission) / totalRelCommission;
+                        receiverCommissionDiff = (commissionDifference * relationship.branch1_commission) / totalRelCommission;
+                    } else {
+                        // Equal split if no commission defined
+                        senderCommissionDiff = commissionDifference / 2;
+                        receiverCommissionDiff = commissionDifference / 2;
+                    }
+                }
+
+                // Update sender branch commission
+                promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
+                    $inc: {
+                        commission: senderCommissionDiff,
+                        today_commission: isToday ? senderCommissionDiff : 0,
+                        remaining_transfer_commission: senderCommissionDiff
+                    }
+                }));
+
+                // Update receiver branch commission
+                promises.push(Branch.findByIdAndUpdate(transaction.receiver_branch, {
+                    $inc: {
+                        commission: receiverCommissionDiff,
+                        today_commission: isToday ? receiverCommissionDiff : 0,
+                        remaining_transfer_commission: receiverCommissionDiff
+                    }
+                }));
+
+                // Update transaction's sender and receiver commission fields
+                const oldSenderCommission = transaction.sender_commision || 0;
+                const oldReceiverCommission = transaction.receiver_commision || 0;
+
+                update_data.sender_commision = oldSenderCommission + senderCommissionDiff;
+                update_data.receiver_commision = oldReceiverCommission + receiverCommissionDiff;
+            } else {
+                // No relationship - commission goes entirely to sender branch
+                promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
+                    $inc: {
+                        commission: commissionDifference,
+                        today_commission: isToday ? commissionDifference : 0,
+                        remaining_transfer_commission: commissionDifference
+                    }
+                }));
+
+                // Update transaction's sender commission
+                const oldSenderCommission = transaction.sender_commision || 0;
+                update_data.sender_commision = oldSenderCommission + commissionDifference;
+            }
+        }
+    }
+
+    // ==================== HANDLE BRANCH CHANGES ====================
+    if (transaction.admin_permission && (update_data.receiver_branch || update_data.sender_branch)) {
+        const points = Number(decrypt_number(transaction.points));
+        const senderCommission = transaction.sender_commision || 0;
+        const receiverCommission = transaction.receiver_commision || 0;
+
+        // Handle Sender Change
+        if (update_data.sender_branch && update_data.sender_branch.toString() !== transaction.sender_branch.toString()) {
+            // Revert Old Sender
+            promises.push(Branch.findByIdAndUpdate(transaction.sender_branch, {
+                $inc: {
+                    opening_balance: isToday ? 0 : -points,
+                    transaction_balance: -points,
+                    commission: -senderCommission,
+                    today_commission: isToday ? -senderCommission : 0,
+                    remaining_transfer_commission: -senderCommission
+                }
+            }));
+
+            // Apply New Sender
+            promises.push(Branch.findByIdAndUpdate(update_data.sender_branch, {
+                $inc: {
+                    opening_balance: isToday ? 0 : points,
+                    transaction_balance: points,
+                    commission: senderCommission,
+                    today_commission: isToday ? senderCommission : 0,
+                    remaining_transfer_commission: senderCommission
+                }
+            }));
+        }
+
+        // Handle Receiver Change
+        if (update_data.receiver_branch && update_data.receiver_branch.toString() !== transaction.receiver_branch.toString()) {
+            // Revert Old Receiver
+            promises.push(Branch.findByIdAndUpdate(transaction.receiver_branch, {
+                $inc: {
+                    opening_balance: isToday ? 0 : points,
+                    transaction_balance: points,
+                    commission: -receiverCommission,
+                    today_commission: isToday ? -receiverCommission : 0,
+                    remaining_transfer_commission: -receiverCommission
+                }
+            }));
+
+            // Apply New Receiver
+            promises.push(Branch.findByIdAndUpdate(update_data.receiver_branch, {
+                $inc: {
+                    opening_balance: isToday ? 0 : -points,
+                    transaction_balance: -points,
+                    commission: receiverCommission,
+                    today_commission: isToday ? receiverCommission : 0,
+                    remaining_transfer_commission: receiverCommission
+                }
+            }));
+        }
+    }
+
+    // Execute all branch updates
+    if (promises.length > 0) {
+        await Promise.all(promises);
+    }
+
     // Prepare update with encryption for sensitive fields
-    const updateFields = { ...updateData };
+    const updateFields = { ...update_data };
 
     // Encrypt fields if they are being updated
     if (updateFields.points) {
@@ -219,7 +406,7 @@ const updateTrsactionDetail = asyncHandler(async (req, res) => {
     // Mark transaction as edited
     updateFields.isEdited = true;
 
-    // Update the transaction with new data using $set
+    // Update the transaction using $set
     const updatedTransaction = await Transaction.findByIdAndUpdate(
         id,
         { $set: updateFields },
@@ -229,7 +416,6 @@ const updateTrsactionDetail = asyncHandler(async (req, res) => {
     if (!updatedTransaction) {
         return returnCode(res, 500, false, "Failed to update transaction", null);
     }
-
 
     // Send notification to admin about the update
     try {
@@ -281,14 +467,16 @@ const deleteTransaction = asyncHandler(async (req, res) => {
             txDate.getMonth() === today.getMonth() &&
             txDate.getFullYear() === today.getFullYear();
 
-        const balanceField = isToday ? 'transaction_balance' : 'opening_balance';
-
         await Promise.all([
             Branch.findByIdAndUpdate(
                 transaction.sender_branch,
                 {
                     $inc: {
-                        [balanceField]: -points - senderCommission
+                        opening_balance: isToday ? 0 : -points,
+                        transaction_balance: -points,
+                        commission: -senderCommission,
+                        today_commission: -senderCommission,
+                        remaining_transfer_commission: -senderCommission
                     }
                 }
             ),
@@ -296,7 +484,11 @@ const deleteTransaction = asyncHandler(async (req, res) => {
                 transaction.receiver_branch,
                 {
                     $inc: {
-                        [balanceField]: points - receiverCommission
+                        opening_balance: isToday ? 0 : points,
+                        transaction_balance: points,
+                        commission: -receiverCommission,
+                        today_commission: -receiverCommission,
+                        remaining_transfer_commission: -receiverCommission
                     }
                 }
             )
