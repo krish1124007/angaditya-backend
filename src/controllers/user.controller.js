@@ -8,6 +8,7 @@ import { decrypt_number } from "../secrets/decrypt.js";
 import { encrypt_number, encrypt_text } from "../secrets/encrypt.js";
 import { UserAccessLog } from "../models/useraccesslog.model.js"
 import { CustomRelationship } from "../models/custom_relationship.js";
+import { BranchSnapshot } from "../models/branch-snapshot.model.js";
 
 const getPoints = (p) => Number(decrypt_number(p));
 
@@ -383,6 +384,166 @@ const updateTrsactionDetail = asyncHandler(async (req, res) => {
         await Promise.all(promises);
     }
 
+    // ==================== UPDATE SNAPSHOTS FOR PAST TRANSACTIONS ====================
+    if (!isToday && transaction.admin_permission) {
+        // Get the transaction date for snapshot lookup
+        const snapshotDate = new Date(transaction.date);
+        snapshotDate.setHours(0, 0, 0, 0);
+
+        // Track which branches need snapshot updates
+        const branchesToUpdate = new Set();
+
+        // Determine which branches were affected
+        if (update_data.points || update_data.commission) {
+            branchesToUpdate.add(transaction.sender_branch.toString());
+            branchesToUpdate.add(transaction.receiver_branch.toString());
+        }
+
+        if (update_data.sender_branch && update_data.sender_branch.toString() !== transaction.sender_branch.toString()) {
+            branchesToUpdate.add(transaction.sender_branch.toString()); // Old sender
+            branchesToUpdate.add(update_data.sender_branch.toString()); // New sender
+        }
+
+        if (update_data.receiver_branch && update_data.receiver_branch.toString() !== transaction.receiver_branch.toString()) {
+            branchesToUpdate.add(transaction.receiver_branch.toString()); // Old receiver
+            branchesToUpdate.add(update_data.receiver_branch.toString()); // New receiver
+        }
+
+        // Update snapshots for all affected branches
+        for (const branchId of branchesToUpdate) {
+            try {
+                // Find the snapshot for this branch on the transaction date
+                const snapshot = await BranchSnapshot.findOne({
+                    branch_id: branchId,
+                    snapshot_date: snapshotDate
+                });
+
+                if (snapshot) {
+                    const snapshotUpdates = {};
+
+                    // POINTS CHANGE: Update opening_balance in snapshot
+                    if (update_data.points) {
+                        const oldPoints = Number(decrypt_number(transaction.points));
+                        const newPoints = Number(update_data.points);
+                        const pointsDifference = newPoints - oldPoints;
+
+                        if (pointsDifference !== 0) {
+                            // Sender branch: increase opening_balance
+                            if (branchId === transaction.sender_branch.toString()) {
+                                snapshotUpdates.opening_balance = (snapshot.opening_balance || 0) + pointsDifference;
+                            }
+                            // Receiver branch: decrease opening_balance
+                            if (branchId === transaction.receiver_branch.toString()) {
+                                snapshotUpdates.opening_balance = (snapshot.opening_balance || 0) - pointsDifference;
+                            }
+                        }
+                    }
+
+                    // COMMISSION CHANGE: Update total_commission in snapshot
+                    if (update_data.commission !== undefined) {
+                        const oldCommission = transaction.commission || 0;
+                        const newCommission = Number(update_data.commission);
+                        const commissionDifference = newCommission - oldCommission;
+
+                        if (commissionDifference !== 0) {
+                            // Check for relationship to determine commission split
+                            const relationship = await CustomRelationship.findOne({
+                                $or: [
+                                    { branch1_id: transaction.sender_branch, branch2_id: transaction.receiver_branch },
+                                    { branch1_id: transaction.receiver_branch, branch2_id: transaction.sender_branch }
+                                ]
+                            });
+
+                            if (relationship) {
+                                let senderCommissionDiff = 0;
+                                let receiverCommissionDiff = 0;
+
+                                if (relationship.branch1_id.toString() === transaction.sender_branch.toString()) {
+                                    const totalRelCommission = relationship.branch1_commission + relationship.branch2_commission;
+                                    if (totalRelCommission > 0) {
+                                        senderCommissionDiff = (commissionDifference * relationship.branch1_commission) / totalRelCommission;
+                                        receiverCommissionDiff = (commissionDifference * relationship.branch2_commission) / totalRelCommission;
+                                    } else {
+                                        senderCommissionDiff = commissionDifference / 2;
+                                        receiverCommissionDiff = commissionDifference / 2;
+                                    }
+                                } else {
+                                    const totalRelCommission = relationship.branch1_commission + relationship.branch2_commission;
+                                    if (totalRelCommission > 0) {
+                                        senderCommissionDiff = (commissionDifference * relationship.branch2_commission) / totalRelCommission;
+                                        receiverCommissionDiff = (commissionDifference * relationship.branch1_commission) / totalRelCommission;
+                                    } else {
+                                        senderCommissionDiff = commissionDifference / 2;
+                                        receiverCommissionDiff = commissionDifference / 2;
+                                    }
+                                }
+
+                                if (branchId === transaction.sender_branch.toString()) {
+                                    snapshotUpdates.total_commission = (snapshot.total_commission || 0) + senderCommissionDiff;
+                                }
+                                if (branchId === transaction.receiver_branch.toString()) {
+                                    snapshotUpdates.total_commission = (snapshot.total_commission || 0) + receiverCommissionDiff;
+                                }
+                            } else {
+                                // No relationship - all commission to sender
+                                if (branchId === transaction.sender_branch.toString()) {
+                                    snapshotUpdates.total_commission = (snapshot.total_commission || 0) + commissionDifference;
+                                }
+                            }
+                        }
+                    }
+
+                    // BRANCH CHANGE: Update opening_balance in snapshots
+                    if (update_data.sender_branch || update_data.receiver_branch) {
+                        const points = Number(decrypt_number(transaction.points));
+                        const senderCommission = transaction.sender_commision || 0;
+                        const receiverCommission = transaction.receiver_commision || 0;
+
+                        // Handle sender branch change
+                        if (update_data.sender_branch && update_data.sender_branch.toString() !== transaction.sender_branch.toString()) {
+                            if (branchId === transaction.sender_branch.toString()) {
+                                // Revert old sender
+                                snapshotUpdates.opening_balance = (snapshot.opening_balance || 0) - points;
+                                snapshotUpdates.total_commission = (snapshot.total_commission || 0) - senderCommission;
+                            }
+                            if (branchId === update_data.sender_branch.toString()) {
+                                // Apply new sender
+                                snapshotUpdates.opening_balance = (snapshot.opening_balance || 0) + points;
+                                snapshotUpdates.total_commission = (snapshot.total_commission || 0) + senderCommission;
+                            }
+                        }
+
+                        // Handle receiver branch change
+                        if (update_data.receiver_branch && update_data.receiver_branch.toString() !== transaction.receiver_branch.toString()) {
+                            if (branchId === transaction.receiver_branch.toString()) {
+                                // Revert old receiver
+                                snapshotUpdates.opening_balance = (snapshot.opening_balance || 0) + points;
+                                snapshotUpdates.total_commission = (snapshot.total_commission || 0) - receiverCommission;
+                            }
+                            if (branchId === update_data.receiver_branch.toString()) {
+                                // Apply new receiver
+                                snapshotUpdates.opening_balance = (snapshot.opening_balance || 0) - points;
+                                snapshotUpdates.total_commission = (snapshot.total_commission || 0) + receiverCommission;
+                            }
+                        }
+                    }
+
+                    // Apply snapshot updates if any
+                    if (Object.keys(snapshotUpdates).length > 0) {
+                        await BranchSnapshot.findByIdAndUpdate(snapshot._id, snapshotUpdates);
+                        console.log(`Updated snapshot for branch ${branchId} on date ${snapshotDate.toISOString()}`);
+                    }
+                } else {
+                    console.warn(`No snapshot found for branch ${branchId} on date ${snapshotDate.toISOString()}`);
+                }
+            } catch (snapshotError) {
+                console.error(`Error updating snapshot for branch ${branchId}:`, snapshotError);
+                // Continue execution even if snapshot update fails
+            }
+        }
+    }
+
+
     // Prepare update with encryption for sensitive fields
     const updateFields = { ...update_data };
 
@@ -493,6 +654,55 @@ const deleteTransaction = asyncHandler(async (req, res) => {
                 }
             )
         ]);
+
+        // ==================== UPDATE SNAPSHOTS FOR PAST TRANSACTIONS ====================
+        if (!isToday) {
+            // Get the transaction date for snapshot lookup
+            const snapshotDate = new Date(transaction.date);
+            snapshotDate.setHours(0, 0, 0, 0);
+
+            // Update snapshots for both sender and receiver branches
+            const snapshotPromises = [];
+
+            // Update sender branch snapshot
+            snapshotPromises.push(
+                BranchSnapshot.findOneAndUpdate(
+                    {
+                        branch_id: transaction.sender_branch,
+                        snapshot_date: snapshotDate
+                    },
+                    {
+                        $inc: {
+                            opening_balance: -points,
+                            total_commission: -senderCommission
+                        }
+                    }
+                ).catch(err => {
+                    console.error(`Error updating sender snapshot on delete:`, err);
+                })
+            );
+
+            // Update receiver branch snapshot
+            snapshotPromises.push(
+                BranchSnapshot.findOneAndUpdate(
+                    {
+                        branch_id: transaction.receiver_branch,
+                        snapshot_date: snapshotDate
+                    },
+                    {
+                        $inc: {
+                            opening_balance: points,
+                            total_commission: -receiverCommission
+                        }
+                    }
+                ).catch(err => {
+                    console.error(`Error updating receiver snapshot on delete:`, err);
+                })
+            );
+
+            await Promise.all(snapshotPromises);
+            console.log(`Updated snapshots for transaction deletion on date ${snapshotDate.toISOString()}`);
+        }
     }
 
     const deleteT = await Transaction.findByIdAndDelete(id);
