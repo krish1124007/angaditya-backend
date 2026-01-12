@@ -18,7 +18,7 @@ async function runSnapshotToJan10() {
         console.log("🚀 Connected to MongoDB");
 
         // Set target date to 10th January 2026
-        const targetDate = new Date("2026-01-10");
+        const targetDate = new Date("2026-01-11");
         targetDate.setHours(0, 0, 0, 0);
 
         console.log(`📅 Creating manual snapshot for: ${targetDate.toLocaleDateString('en-IN')}`);
@@ -141,7 +141,7 @@ async function runSnapshotToJan10() {
         );
         await Promise.all(syncPromises);
 
-        console.log("🏁 FINISHED: All end-of-day performance steps completed for 10-01-2026.");
+        console.log("🏁 FINISHED: All end-of-day performance steps completed for 11-01-2026.");
         process.exit(0);
 
     } catch (error) {

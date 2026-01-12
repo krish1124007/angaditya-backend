@@ -22,6 +22,10 @@ const BranchSnapshotSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    transaction_balance: {
+        type: Number,
+        default: 0
+    },
     snapshot_date: {
         type: Date,
         required: true

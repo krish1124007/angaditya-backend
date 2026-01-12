@@ -248,8 +248,8 @@ const getAllTransactions = asyncHandler(async (req, res) => {
                 updatedAt: 1,
                 commission: 1,
                 isEdited: 1,
-                other_sender:1,
-                other_receiver:1,
+                other_sender: 1,
+                other_receiver: 1,
                 __v: 1,
 
                 // Additional calculated fields
@@ -413,42 +413,57 @@ const getAllBranches = asyncHandler(async (req, res) => {
         const end = new Date(dateString);
         end.setHours(23, 59, 59, 999);
 
-        // Fetch branch snapshots
-        const branches = await BranchSnapshot.find({ snapshot_date: { $gte: start, $lte: end } })
-            .populate('branch_id', 'branch_name location active')
-            .lean();
+        // Check if the selected date is today
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-        // Count transactions for each branch for the specific date
-        const branchesWithCounts = await Promise.all(branches.map(async (branch) => {
-            const branchId = branch.branch_id._id;
+        if (start.getTime() !== today.getTime()) {
+            // ONLY use snapshots if it's NOT today
+            // Fetch branch snapshots
+            const branches = await BranchSnapshot.find({ snapshot_date: { $gte: start, $lte: end } })
+                .populate('branch_id', 'branch_name location active')
+                .lean();
 
-            // Count transactions where this branch is sender
-            const sentCount = await Transaction.countDocuments({
-                sender_branch: branchId,
-                date: { $gte: start, $lte: end }
-            });
+            // Count transactions for each branch for the specific date
+            const branchesWithCounts = await Promise.all(branches.map(async (branch) => {
+                const branchId = branch.branch_id ? branch.branch_id._id : null;
 
-            // Count transactions where this branch is receiver
-            const receivedCount = await Transaction.countDocuments({
-                receiver_branch: branchId,
-                date: { $gte: start, $lte: end }
-            });
+                let sentCount = 0;
+                let receivedCount = 0;
 
-            return {
-                ...branch,
-                commission: branch.total_commission || 0, // Map for frontend consistency
-                transaction_count: {
-                    sent: sentCount,
-                    received: receivedCount,
-                    total: sentCount + receivedCount
+                if (branchId) {
+                    // Count transactions where this branch is sender
+                    sentCount = await Transaction.countDocuments({
+                        sender_branch: branchId,
+                        date: { $gte: start, $lte: end }
+                    });
+
+                    // Count transactions where this branch is receiver
+                    receivedCount = await Transaction.countDocuments({
+                        receiver_branch: branchId,
+                        date: { $gte: start, $lte: end }
+                    });
                 }
-            };
-        }));
 
-        return returnCode(res, 200, true, "Branches fetched successfully", branchesWithCounts);
+                return {
+                    ...branch,
+                    // Use saved transaction_balance if available, otherwise fallback to opening_balance
+                    transaction_balance: branch.transaction_balance ?? branch.opening_balance ?? 0,
+                    commission: branch.total_commission || 0, // Map for frontend consistency
+                    transaction_count: {
+                        sent: sentCount,
+                        received: receivedCount,
+                        total: sentCount + receivedCount
+                    }
+                };
+            }));
+
+            return returnCode(res, 200, true, "Branches fetched successfully", branchesWithCounts);
+        }
+        // If it IS today, fall through to the live data logic below
     }
 
-    // When no date is provided, fetch all branches with all-time transaction counts
+    // When no date is provided (or date is today), fetch all branches with live counts
     const branches = await Branch.find().lean();
 
     // Count all transactions for each branch

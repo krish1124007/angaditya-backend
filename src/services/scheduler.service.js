@@ -29,6 +29,7 @@ const createDailyBranchSnapshots = async () => {
           branch_id: branch._id,
           branch_name: branch.branch_name,
           opening_balance: branch.opening_balance || 0,
+          transaction_balance: branch.transaction_balance || 0,
           total_commission: branch.commission || 0,
           today_commission: branch.today_commission || 0,
           snapshot_date: snapshotDate
